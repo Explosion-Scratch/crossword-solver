@@ -1,0 +1,15 @@
+{
+  "name": "crossword-solver",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "minizinc": "^4.4.4"
+  }
+}
