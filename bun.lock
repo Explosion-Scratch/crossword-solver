@@ -4,6 +4,7 @@
     "": {
       "name": "crossword-solver",
       "dependencies": {
+        "@types/node": "^24.6.0",
         "minizinc": "^4.4.4",
         "vue": "3",
       },
