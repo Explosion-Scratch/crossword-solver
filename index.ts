@@ -4,8 +4,8 @@ import { readFileSync } from "fs";
 const r = (p) => readFileSync(p, "utf-8");
 
 const model = new MiniZinc.Model();
-model.addFile("crosswords.mzn", r("crosswords.mzn"));
-model.addFile("all_words.dzn", r("all_words.dzn"));
+model.addFile("crosswords.mzn", r("crosswords.mzn"), false);
+model.addFile("all_words.dzn", r("all_words.dzn"), false);
 
 const grid = `
 _ _ _ #

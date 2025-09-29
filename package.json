@@ -10,6 +10,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "minizinc": "^4.4.4"
+    "minizinc": "^4.4.4",
+    "vue": "3"
   }
 }
