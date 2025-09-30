@@ -135,26 +135,56 @@
                 <p v-if="loadError" class="text-red-400">{{ loadError }}</p>
                 <p v-if="solveStatus">{{ solveStatus }}</p>
               </div>
-              <div v-if="solutionLetters.length && segmentDetails.length" class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-3 text-xs text-zinc-300">
-                <div class="flex items-center justify-between">
-                  <span class="uppercase tracking-[0.2em] text-zinc-500">Clues</span>
-                  <span class="text-zinc-400">{{ clueHeadline }}</span>
+              <div v-if="solutionLetters.length && (acrossClues.length || downClues.length)" class="grid gap-2">
+                <div class="flex items-center justify-between px-1">
+                  <span class="text-xs uppercase tracking-[0.2em] text-zinc-500">Clues</span>
+                  <span class="text-xs text-zinc-400">{{ clueHeadline }}</span>
                 </div>
-                <div class="grid max-h-64 gap-1 overflow-y-auto pr-1">
-                  <button
-                    v-for="segment in segmentDetails"
-                    :key="segment.index"
-                    @mouseenter="hoveredWordIndex = segment.index"
-                    @mouseleave="hoveredWordIndex = -1"
-                    class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] transition"
-                    :class="hoveredWordIndex === segment.index ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
-                  >
-                    <span class="flex-1">
-                      <span class="text-zinc-200">{{ segment.word || '—' }}</span>
-                      <span class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue || 'No clue available' }}</span>
-                    </span>
-                    <span class="text-zinc-500">{{ segment.length }}L</span>
-                  </button>
+                
+                <!-- Across Clues -->
+                <div v-if="acrossClues.length" class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-2">
+                  <h3 class="px-1 text-xs font-medium uppercase tracking-[0.25em] text-zinc-400">Across</h3>
+                  <div ref="acrossContainer" class="grid max-h-32 gap-1 overflow-y-auto pr-1">
+                    <button
+                      v-for="segment in acrossClues"
+                      :key="`across-${segment.index}`"
+                      :data-segment-index="segment.index"
+                      :data-direction="'across'"
+                      @mouseenter="onClueHover(segment)"
+                      @mouseleave="onClueLeave"
+                      class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
+                      :class="hoveredWordIndex === segment.index ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                    >
+                      <span class="flex-1">
+                        <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
+                        <span class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue || 'No clue available' }}</span>
+                      </span>
+                      <span class="text-zinc-500">{{ segment.length }}L</span>
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Down Clues -->
+                <div v-if="downClues.length" class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-2">
+                  <h3 class="px-1 text-xs font-medium uppercase tracking-[0.25em] text-zinc-400">Down</h3>
+                  <div ref="downContainer" class="grid max-h-32 gap-1 overflow-y-auto pr-1">
+                    <button
+                      v-for="segment in downClues"
+                      :key="`down-${segment.index}`"
+                      :data-segment-index="segment.index"
+                      :data-direction="'down'"
+                      @mouseenter="onClueHover(segment)"
+                      @mouseleave="onClueLeave"
+                      class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
+                      :class="hoveredWordIndex === segment.index ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                    >
+                      <span class="flex-1">
+                        <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
+                        <span class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue || 'No clue available' }}</span>
+                      </span>
+                      <span class="text-zinc-500">{{ segment.length }}L</span>
+                    </button>
+                  </div>
                 </div>
               </div>
               <button
@@ -182,6 +212,12 @@
       import * as MiniZinc from "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.mjs";
 
       const letters = "abcdefghijklmnopqrstuvwxyz";
+      const normalizeClue = (value) =>
+        value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
       const createMatrix = (r, c) => Array.from({ length: r }, () => Array.from({ length: c }, () => "_"));
       const cloneMatrix = (matrix) => matrix.map((row) => row.slice());
       const buildProblemMatrix = (matrix) => {
@@ -213,6 +249,75 @@
         };
         extract(rows, cols, (r, c) => grid[r][c]);
         extract(cols, rows, (r, c) => grid[c][r]);
+        return segments;
+      };
+      const collectSegmentsWithDirection = (grid, rows, cols) => {
+        const segments = [];
+        const numberedCells = new Map();
+        let clueNumber = 1;
+        
+        // First pass: assign numbers to cells that start across or down words
+        for (let r = 0; r < rows; r += 1) {
+          for (let c = 0; c < cols; c += 1) {
+            if (grid[r][c] === 0) continue;
+            
+            const startsAcross = (c === 0 || grid[r][c - 1] === 0) && c + 1 < cols && grid[r][c + 1] !== 0;
+            const startsDown = (r === 0 || grid[r - 1][c] === 0) && r + 1 < rows && grid[r + 1][c] !== 0;
+            
+            if (startsAcross || startsDown) {
+              numberedCells.set(`${r},${c}`, clueNumber++);
+            }
+          }
+        }
+        
+        // Extract across segments
+        for (let r = 0; r < rows; r += 1) {
+          const line = [];
+          let startCol = -1;
+          for (let c = 0; c < cols; c += 1) {
+            const value = grid[r][c];
+            if (value === 0) {
+              if (line.length > 1) {
+                const number = numberedCells.get(`${r},${startCol}`) ?? 0;
+                segments.push({ cells: [...line], direction: 'across', number });
+              }
+              line.length = 0;
+              startCol = -1;
+            } else {
+              if (line.length === 0) startCol = c;
+              line.push(value);
+            }
+          }
+          if (line.length > 1) {
+            const number = numberedCells.get(`${r},${startCol}`) ?? 0;
+            segments.push({ cells: [...line], direction: 'across', number });
+          }
+        }
+        
+        // Extract down segments
+        for (let c = 0; c < cols; c += 1) {
+          const line = [];
+          let startRow = -1;
+          for (let r = 0; r < rows; r += 1) {
+            const value = grid[r][c];
+            if (value === 0) {
+              if (line.length > 1) {
+                const number = numberedCells.get(`${startRow},${c}`) ?? 0;
+                segments.push({ cells: [...line], direction: 'down', number });
+              }
+              line.length = 0;
+              startRow = -1;
+            } else {
+              if (line.length === 0) startRow = r;
+              line.push(value);
+            }
+          }
+          if (line.length > 1) {
+            const number = numberedCells.get(`${startRow},${c}`) ?? 0;
+            segments.push({ cells: [...line], direction: 'down', number });
+          }
+        }
+        
         return segments;
       };
       const gridPresentation = (matrix) => 
@@ -346,12 +451,16 @@
           const solutionWords = ref([]);
           const solvedCells = ref(new Set());
           const userPrefills = ref(new Map());
-          const wordSource = ref([]);
+          const worker = ref(null);
+          const pendingRequest = ref(0);
+          const datasetEntries = ref([]);
+          const filteredWordSource = ref([]);
           const availableLengths = ref([]);
           const selectedLengths = ref(new Set());
           const crosswordsModel = ref("");
           const hoveredCell = ref(-1);
           const hoveredWordIndex = ref(-1);
+          const hoveredSegmentIndices = ref(new Set());
           const minClueCount = ref(1);
           const normalizedMinClue = computed(() => {
             const value = Number(minClueCount.value);
@@ -360,12 +469,12 @@
           });
           watch(normalizedMinClue, (value) => {
             if (minClueCount.value !== value) minClueCount.value = value;
+            requestFilter(value);
           });
           const slotSummary = computed(() => deriveSlots(grid.value || createMatrix(rows.value, cols.value)));
           const flatGrid = computed(() => (grid.value || []).flat());
           const openCellCount = computed(() => flatGrid.value.filter((cell) => cell !== "#").length);
           const blockedCellCount = computed(() => flatGrid.value.filter((cell) => cell === "#").length);
-          const filteredWordSource = computed(() => wordSource.value.filter((entry) => (entry.clues?.length ?? 0) >= normalizedMinClue.value));
           const lengthOptions = computed(() =>
             (availableLengths.value ?? []).map((length) => {
               const count = filteredWordSource.value.filter((entry) => entry.word.length === length).length;
@@ -526,7 +635,7 @@
             const activeGrid = grid.value;
             if (!activeGrid.length) return [];
             const { mapped } = buildProblemMatrix(activeGrid);
-            const segments = collectSegments(mapped, rows.value, cols.value);
+            const segments = collectSegmentsWithDirection(mapped, rows.value, cols.value);
             const idToIndex = new Map();
             mapped.forEach((row, rowIndex) => {
               row.forEach((cellId, colIndex) => {
@@ -535,12 +644,12 @@
               });
             });
             return segments.map((segment, segmentIndex) => {
-              const flatIndices = segment.map((id) => idToIndex.get(id)).filter((value) => typeof value === "number");
+              const flatIndices = segment.cells.map((id) => idToIndex.get(id)).filter((value) => typeof value === "number");
               const lettersInSegment = flatIndices.map((flatIndex) => {
                 if (userPrefills.value.has(flatIndex)) return userPrefills.value.get(flatIndex);
                 return solutionLetters.value[flatIndex] ?? "";
               });
-              const length = segment.length;
+              const length = segment.cells.length;
               const candidates = filteredWordSource.value.filter((entry) => {
                 if (entry.word.length !== length) return false;
                 for (let i = 0; i < length; i += 1) {
@@ -563,15 +672,41 @@
                 entry: chosen,
                 clue,
                 isFilled,
+                direction: segment.direction,
+                number: segment.number,
               };
             });
           });
+
+          const segmentsByCell = computed(() => {
+            const map = new Map();
+            segmentDetails.value.forEach((segment) => {
+              segment.flatIndices.forEach((index) => {
+                const next = map.get(index) ?? [];
+                next.push(segment.index);
+                map.set(index, next);
+              });
+            });
+            return map;
+          });
+
+          const findSegmentIndicesByCell = (index) => segmentsByCell.value.get(index) ?? [];
 
           watch(segmentDetails, (segments) => {
             if (hoveredWordIndex.value >= segments.length) {
               hoveredWordIndex.value = -1;
             }
           });
+          const acrossClues = computed(() => 
+            segmentDetails.value
+              .filter((segment) => segment.direction === 'across')
+              .sort((a, b) => a.number - b.number)
+          );
+          const downClues = computed(() => 
+            segmentDetails.value
+              .filter((segment) => segment.direction === 'down')
+              .sort((a, b) => a.number - b.number)
+          );
           const solvedSegments = computed(() => segmentDetails.value.filter((segment) => segment.isFilled));
           const clueHeadline = computed(() => {
             const filled = solvedSegments.value.length;
@@ -580,26 +715,73 @@
             return `${filled}/${total} filled`;
           });
           const hoveredSegmentCells = computed(() => {
-            if (hoveredWordIndex.value < 0) return new Set();
-            const target = segmentDetails.value[hoveredWordIndex.value];
-            if (!target) return new Set();
-            return new Set(target.flatIndices);
+            const targetIndices = hoveredSegmentIndices.value;
+            if (!targetIndices?.size) return new Set();
+            const cells = new Set();
+            segmentDetails.value.forEach((segment) => {
+              if (!targetIndices.has(segment.index)) return;
+              segment.flatIndices.forEach((index) => cells.add(index));
+            });
+            return cells;
           });
+          const acrossContainer = ref(null);
+          const downContainer = ref(null);
+          
           const exitGrid = () => {
             hoveredCell.value = -1;
+          };
+          const updateHoveredSegments = (index) => {
+            const next = index >= 0 ? new Set(findSegmentIndicesByCell(index)) : new Set();
+            hoveredSegmentIndices.value = next;
+          };
+          
+          const onClueHover = (segment) => {
+            hoveredWordIndex.value = segment.index;
+            hoveredSegmentIndices.value = new Set([segment.index]);
+          };
+          
+          const onClueLeave = () => {
+            hoveredWordIndex.value = -1;
+            hoveredSegmentIndices.value = new Set();
+          };
+          
+          const scrollToClue = (segmentIndex) => {
+            const segment = segmentDetails.value.find(s => s.index === segmentIndex);
+            if (!segment) return;
+            
+            const container = segment.direction === 'across' ? acrossContainer.value : downContainer.value;
+            if (!container) return;
+            
+            const clueElement = container.querySelector(`[data-segment-index="${segmentIndex}"]`);
+            if (clueElement) {
+              clueElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
           };
           const onCellPointerDown = (index) => {
             startDrag(index);
             enterCell(index);
+            const indices = findSegmentIndicesByCell(index);
+            hoveredWordIndex.value = indices[0] ?? -1;
+            updateHoveredSegments(index);
+            if (indices.length > 0) scrollToClue(indices[0]);
           };
           const onCellPointerEnter = (index) => {
             if (dragging.active) {
               dragCell(index);
             }
             enterCell(index);
+            const indices = findSegmentIndicesByCell(index);
+            const newHoveredIndex = indices[0] ?? hoveredWordIndex.value;
+            if (newHoveredIndex !== hoveredWordIndex.value) {
+              hoveredWordIndex.value = newHoveredIndex;
+              if (newHoveredIndex >= 0) scrollToClue(newHoveredIndex);
+            }
+            updateHoveredSegments(index);
           };
           const onCellPointerLeave = (index) => {
             leaveCell(index);
+            if (hoveredCell.value < 0) hoveredWordIndex.value = -1;
+            if (hoveredCell.value < 0) updateHoveredSegments(-1);
           };
           const solve = async () => {
             if (disableSolve.value) return;
@@ -682,7 +864,49 @@
           const response = await fetch("./words.json");
           if (!response.ok) throw new Error("Failed to load word list.");
           const data = await response.json();
-          return data.map(([word, clues]) => ({ word, clues }));
+          return data.map(([word, clues]) => ({
+            word,
+            clues: Array.from(
+              new Map(
+                (clues ?? [])
+                  .filter((clue) => typeof clue === "string")
+                  .map((clue) => {
+                    const normalized = normalizeClue(clue);
+                    return [normalized, clue];
+                  })
+              ).values()
+            ),
+          }));
+        };
+
+        const initWorker = (entries) => {
+          const instance = new Worker(new URL("./clueWorker.js", import.meta.url), { type: "module" });
+          worker.value = instance;
+          instance.onmessage = (event) => {
+            const { type, payload } = event.data ?? {};
+            if (type === "initialized") {
+              datasetEntries.value = payload.entries ?? [];
+              filteredWordSource.value = datasetEntries.value;
+              availableLengths.value = Array.from(new Set(datasetEntries.value.map((entry) => entry.word.length))).sort((a, b) => a - b);
+              selectedLengths.value = new Set(availableLengths.value);
+              ready.value = true;
+            }
+            if (type === "filtered") {
+              if (payload.requestId !== pendingRequest.value) return;
+              filteredWordSource.value = payload.entries ?? [];
+            }
+          };
+          instance.postMessage({ type: "init", payload: { entries } });
+        };
+
+        const requestFilter = (minClue) => {
+          if (!worker.value) return;
+          const requestId = Date.now();
+          pendingRequest.value = requestId;
+          worker.value.postMessage({
+            type: "filter",
+            payload: { minClueCount: minClue, requestId },
+          });
         };
         const handlePointerUp = () => endDrag();
 
@@ -702,12 +926,10 @@
               wasmURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.wasm",
               dataURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.data",
             });
-            wordSource.value = wordEntries;
             availableLengths.value = Array.from(new Set(wordEntries.map((entry) => entry.word.length))).sort((a, b) => a - b);
-            selectedLengths.value = new Set(availableLengths.value);
             crosswordsModel.value = modelText;
-            ready.value = true;
             solveStatus.value = "Runtime ready.";
+            initWorker(wordEntries);
           } catch (error) {
             loadError.value = error.message ?? String(error);
           }
@@ -716,6 +938,10 @@
         onBeforeUnmount(() => {
           window.removeEventListener("pointerup", handlePointerUp);
           window.removeEventListener("keydown", handleKey);
+          if (worker.value) {
+            worker.value.terminate();
+            worker.value = null;
+          }
         });
         return {
           rows,
@@ -747,6 +973,8 @@
           clearSolve,
           wordList,
           segmentDetails,
+          acrossClues,
+          downClues,
           clueHeadline,
           minClueCount,
           exitGrid,
@@ -755,6 +983,10 @@
           onCellPointerLeave,
           hoveredWordIndex,
           hoveredSegmentCells,
+          acrossContainer,
+          downContainer,
+          onClueHover,
+          onClueLeave,
         };
       },
     });
