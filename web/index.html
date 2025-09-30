@@ -81,20 +81,39 @@
           </div>
           <div class="grid gap-6 md:grid-cols-[minmax(0,_2fr)_minmax(0,_1fr)]">
             <div class="rounded border border-zinc-800 bg-zinc-950/70 p-4">
-              <div class="flex items-center justify-between">
-                <h2 class="text-sm uppercase tracking-[0.2em] text-zinc-500">Layout</h2>
-                <span class="text-xs text-zinc-500">Click or drag to toggle blocks</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <h2 class="text-sm uppercase tracking-[0.2em] text-zinc-500">Layout</h2>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  @click="fillEntireGrid('blocked')"
+                  class="h-6 w-6 rounded border border-zinc-700 bg-zinc-900 transition hover:border-zinc-400"
+                  aria-label="Fill entire grid with blocks"
+                  title="Fill entire grid with blocks"
+                ></button>
+                <button
+                  type="button"
+                  @click="fillEntireGrid('open')"
+                  class="h-6 w-6 rounded border border-zinc-700 bg-zinc-950 transition hover:border-zinc-400"
+                  aria-label="Clear all blocks"
+                  title="Clear all blocks"
+                ></button>
               </div>
+            </div>
+            <span class="text-xs text-zinc-500">Click or drag to toggle blocks</span>
+          </div>
               <div
                 class="mt-4 grid gap-px border border-zinc-800 bg-zinc-900/40 p-2"
                 :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }"
-                @pointerleave="endDrag"
+                @pointerleave="exitGrid"
               >
                 <button
                   v-for="(cell, cellIndex) in flatGrid"
                   :key="cellIndex"
-                  @pointerdown="startDrag(cellIndex)"
-                  @pointerenter="dragCell(cellIndex)"
+                  @pointerdown="onCellPointerDown(cellIndex)"
+                  @pointerenter="onCellPointerEnter(cellIndex)"
+                  @pointerleave="onCellPointerLeave(cellIndex)"
                   @pointerup="endDrag"
                   class="flex aspect-square items-center justify-center text-base font-semibold uppercase transition"
                   :class="cellClass(cellIndex)"
@@ -116,6 +135,13 @@
                 class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] transition disabled:cursor-not-allowed disabled:opacity-50 hover:border-zinc-300 hover:text-white"
               >
                 {{ solving ? 'Solving…' : 'Solve Crossword' }}
+              </button>
+              <button
+                v-if="solutionLetters.length"
+                @click="clearSolve"
+                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] transition hover:border-zinc-300 hover:text-white"
+              >
+                Clear Solve
               </button>
               <div v-if="solutionLetters.length" class="rounded border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-300">
                 <div class="flex justify-between">
@@ -178,7 +204,7 @@
       const gridPresentation = (matrix) => 
         matrix
             .map((row) => `%   ${row.map((cell) => (cell === "#" ? "#" : "_")).join(" ")}`).join("\n");
-      const buildPuzzle = (matrix) => {
+      const buildPuzzle = (matrix, prefills = []) => {
         const rows = matrix.length;
         const cols = matrix[0]?.length ?? 0;
         const { mapped, count } = buildProblemMatrix(matrix);
@@ -191,6 +217,24 @@
         const problemLines = mapped.map((row) => `${row.join(", ")},`);
         const tables = segments.map((segment) => `table([${segment.map((value) => `L[${value}]`).join(", ")}], words${segment.length})`);
         const tableBlock = tables.length ? tables.join(" \n/\\ ") : "true";
+        const assignments = [];
+        if (Array.isArray(prefills) && prefills.length) {
+          for (let index = 0; index < prefills.length; index += 1) {
+            const letter = prefills[index];
+            if (!letter) continue;
+            const row = Math.floor(index / cols);
+            const col = index % cols;
+            const cellId = mapped[row]?.[col] ?? 0;
+            if (!cellId) continue;
+            const letterIndex = letters.indexOf(letter);
+            if (letterIndex === -1) continue;
+            assignments.push(`L[${cellId}] = ${letterIndex + 1}`);
+          }
+        }
+        const constraintParts = [];
+        if (tableBlock !== "true") constraintParts.push(tableBlock);
+        if (assignments.length) constraintParts.push(...assignments);
+        const constraintBlock = constraintParts.length ? constraintParts.join(" \n/\\ ") : "true";
         const content = [
           "%",
           "% Generated crossword",
@@ -213,7 +257,7 @@
           "require_distinct_words = 1;",
           "",
           "constraint",
-          `  ${tableBlock}`,
+          `  ${constraintBlock}`,
           ";",
           "",
           "% The segments (words)",
@@ -238,19 +282,19 @@
         ].join("\n");
         return { content, metadata: { mapped, segments, rows, cols } };
       };
-      const buildWordData = (wordsByLength) => {
-        const lengths = Object.keys(wordsByLength)
+      const buildWordData = (entriesByLength) => {
+        const lengths = Object.keys(entriesByLength)
           .map((value) => Number(value))
           .sort((a, b) => a - b);
         const blocks = lengths
-          .filter((length) => wordsByLength[length]?.length)
+          .filter((length) => entriesByLength[length]?.length)
           .map((length) => {
-            const words = wordsByLength[length];
-            const rows = words
-              .map((word) => word.split("").map((letter) => letters.indexOf(letter) + 1))
+            const entries = entriesByLength[length];
+            const rows = entries
+              .map(({ word }) => word.split("").map((letter) => letters.indexOf(letter) + 1))
               .map((codes) => `${codes.join(", ")},`).join("\n");
             return [
-              `int: num_words${length} = ${words.length};`,
+              `int: num_words${length} = ${entries.length};`,
               `array[1..num_words${length}, 1..${length}] of int: words${length} = array2d(1..num_words${length}, 1..${length},`,
               "[",
               rows,
@@ -278,7 +322,7 @@
           const rows = ref(8);
           const cols = ref(8);
           const grid = ref(createMatrix(rows.value, cols.value));
-          const dragging = reactive({ active: false, next: "#" });
+          const dragging = reactive({ active: false, next: "#", startIndex: -1 });
           const ready = ref(false);
           const loadError = ref("");
           const solving = ref(false);
@@ -286,10 +330,14 @@
           const lastStatus = ref("");
           const solutionLetters = ref([]);
           const solutionWords = ref([]);
-          const wordSource = ref({});
+          const solvedCells = ref(new Set());
+          const userPrefills = ref(new Map());
+          const wordSource = ref([]);
           const availableLengths = ref([]);
           const selectedLengths = ref(new Set());
           const crosswordsModel = ref("");
+          const hoveredCell = ref(-1);
+          const hoveredWordIndex = ref(-1);
           const slotSummary = computed(() => deriveSlots(grid.value || createMatrix(rows.value, cols.value)));
           const flatGrid = computed(() => (grid.value || []).flat());
           const openCellCount = computed(() => flatGrid.value.filter((cell) => cell !== "#").length);
@@ -298,11 +346,11 @@
             (availableLengths.value ?? []).map((length) => ({
               length,
               selected: selectedLengths.value.has(length),
-              count: wordSource.value[length]?.length ?? 0,
+              count: wordSource.value.filter((entry) => entry.word.length === length).length,
               label: `${length}L`,
             }))
           );
-          const activeWordCount = computed(() => Array.from(selectedLengths.value || []).reduce((acc, length) => acc + (wordSource.value[length]?.length ?? 0), 0));
+          const activeWordCount = computed(() => Array.from(selectedLengths.value || []).reduce((acc, length) => acc + wordSource.value.filter((entry) => entry.word.length === length).length, 0));
           const disableSolve = computed(() => !ready.value || solving.value || loadError.value.length > 0 || !slotSummary.value.total);
           const applyCell = (index, value) => {
             const next = cloneMatrix(grid.value);
@@ -311,33 +359,53 @@
             if (!next[r]) return;
             next[r][c] = value;
             grid.value = next;
+            solutionLetters.value = [];
+            solutionWords.value = [];
+            solvedCells.value = new Set();
           };
           const startDrag = (index) => {
             const current = flatGrid.value[index] ?? "_";
             const next = current === "#" ? "_" : "#";
             dragging.active = true;
             dragging.next = next;
+            dragging.startIndex = index;
             applyCell(index, next);
+            userPrefills.value.delete(index);
           };
           const dragCell = (index) => {
             if (!dragging.active) return;
             applyCell(index, dragging.next);
+            userPrefills.value.delete(index);
           };
           const endDrag = () => {
             dragging.active = false;
+            dragging.startIndex = -1;
           };
           const cellClass = (index) => {
             const current = flatGrid.value[index] ?? "_";
+            const prefilled = userPrefills.value.has(index);
+            const solved = solvedCells.value.has(index);
+            const hovered = hoveredCell.value === index || hoveredSegmentCells.value.has(index);
             const letter = solutionLetters.value[index] ?? "";
             if (current === "#") return "bg-zinc-900 text-zinc-600 border border-zinc-800 hover:border-zinc-700";
+            if (prefilled) return hovered ? "bg-zinc-950 text-white border border-zinc-400" : "bg-zinc-950 text-zinc-100 border border-zinc-600 hover:border-zinc-400";
+            if (solved && letter) return hovered ? "bg-green-900/30 text-zinc-100 border border-green-400" : "bg-green-900/20 text-zinc-100 border border-green-600/40 hover:border-green-400";
+            if (hovered) return "bg-zinc-950 text-zinc-100 border border-zinc-400";
             if (letter) return "bg-zinc-950 text-zinc-100 border border-zinc-700 hover:border-zinc-400";
             return "bg-zinc-950 text-zinc-300 border border-zinc-800 hover:border-zinc-500";
           };
           const cellLabel = (index) => {
             const current = flatGrid.value[index] ?? "_";
             if (current === "#") return "";
+            if (userPrefills.value.has(index)) return userPrefills.value.get(index).toUpperCase();
             const letter = solutionLetters.value[index];
             return letter ? letter.toUpperCase() : "";
+          };
+          const enterCell = (index) => {
+            hoveredCell.value = index;
+          };
+          const leaveCell = (index) => {
+            if (hoveredCell.value === index) hoveredCell.value = -1;
           };
           const resizeGrid = (nextRows, nextCols) => {
             const next = createMatrix(nextRows, nextCols);
@@ -349,6 +417,8 @@
             grid.value = next;
             solutionLetters.value = [];
             solutionWords.value = [];
+            userPrefills.value.clear();
+            solvedCells.value = new Set();
           };
           watch([rows, cols], ([nextRows, nextCols], [prevRows, prevCols]) => {
             if (nextRows !== prevRows || nextCols !== prevCols) {
@@ -368,8 +438,125 @@
             grid.value = createMatrix(rows.value, cols.value);
             solutionLetters.value = [];
             solutionWords.value = [];
+            userPrefills.value.clear();
+            solvedCells.value = new Set();
             solveStatus.value = "";
             lastStatus.value = "";
+          };
+          const fillEntireGrid = (mode) => {
+            const next = createMatrix(rows.value, cols.value);
+            for (let r = 0; r < rows.value; r += 1) {
+              for (let c = 0; c < cols.value; c += 1) {
+                next[r][c] = mode === "blocked" ? "#" : "_";
+              }
+            }
+            grid.value = next;
+            userPrefills.value.clear();
+            solutionLetters.value = [];
+            solutionWords.value = [];
+            solvedCells.value = new Set();
+            solveStatus.value = "";
+            lastStatus.value = "";
+          };
+          const clearSolve = () => {
+            solutionLetters.value = [];
+            solutionWords.value = [];
+            solvedCells.value = new Set();
+            solveStatus.value = "";
+            lastStatus.value = "";
+          };
+          const applyPrefill = (index, letter) => {
+            const current = flatGrid.value[index] ?? "#";
+            if (current === "#") return;
+            if (letter) {
+              userPrefills.value.set(index, letter);
+            } else {
+              userPrefills.value.delete(index);
+            }
+          };
+          const handleKey = (event) => {
+            if (hoveredCell.value < 0) return;
+            const key = event.key.toLowerCase();
+            if (key.length === 1 && letters.includes(key)) {
+              applyPrefill(hoveredCell.value, key);
+              solutionLetters.value = [];
+              solutionWords.value = [];
+              solvedCells.value = new Set();
+            }
+            if (event.key === "Backspace" || event.key === "Delete") {
+              applyPrefill(hoveredCell.value, "");
+              solutionLetters.value = [];
+              solutionWords.value = [];
+              solvedCells.value = new Set();
+            }
+          };
+          const wordList = computed(() => wordSource.value.filter((entry) => selectedLengths.value.has(entry.word.length)));
+          const segmentDetails = computed(() => {
+            const activeGrid = grid.value;
+            if (!activeGrid.length) return [];
+            const { mapped } = buildProblemMatrix(activeGrid);
+            const segments = collectSegments(mapped, rows.value, cols.value);
+            const idToIndex = new Map();
+            mapped.forEach((row, rowIndex) => {
+              row.forEach((cellId, colIndex) => {
+                if (!cellId) return;
+                idToIndex.set(cellId, rowIndex * cols.value + colIndex);
+              });
+            });
+            return segments.map((segment, segmentIndex) => {
+              const flatIndices = segment.map((id) => idToIndex.get(id)).filter((value) => typeof value === "number");
+              const lettersInSegment = flatIndices.map((flatIndex) => {
+                if (userPrefills.value.has(flatIndex)) return userPrefills.value.get(flatIndex);
+                return solutionLetters.value[flatIndex] ?? "";
+              });
+              const length = segment.length;
+              const candidates = wordSource.value.filter((entry) => {
+                if (entry.word.length !== length) return false;
+                for (let i = 0; i < length; i += 1) {
+                  const char = lettersInSegment[i];
+                  if (char && entry.word[i] !== char) return false;
+                }
+                return true;
+              });
+              const joined = lettersInSegment.join("");
+              const exact = candidates.find((entry) => entry.word === joined);
+              const chosen = exact ?? candidates[0];
+              const clue = chosen?.clues?.[0] ?? "";
+              const isFilled = lettersInSegment.length === length && lettersInSegment.every((char) => char && char.length === 1);
+              return {
+                index: segmentIndex,
+                flatIndices,
+                letters: lettersInSegment,
+                length,
+                word: joined,
+                entry: chosen,
+                clue,
+                isFilled,
+              };
+            });
+          });
+          const hoveredSegmentCells = computed(() => {
+            if (hoveredWordIndex.value < 0) return new Set();
+            const target = segmentDetails.value[hoveredWordIndex.value];
+            if (!target) return new Set();
+            return new Set(target.flatIndices);
+          });
+          const solvedSegments = computed(() => segmentDetails.value.filter((segment) => segment.isFilled && segment.flatIndices.length));
+          const exitGrid = () => {
+            hoveredCell.value = -1;
+          };
+          const onCellPointerDown = (index) => {
+            startDrag(index);
+            enterCell(index);
+          };
+          const onCellPointerEnter = (index) => {
+            if (dragging.active) {
+              dragCell(index);
+            }
+            enterCell(index);
+          };
+          const onCellPointerLeave = (index) => {
+            leaveCell(index);
           };
           const solve = async () => {
             if (disableSolve.value) return;
@@ -379,7 +566,8 @@
             solutionWords.value = [];
             lastStatus.value = "";
             try {
-              const { content, metadata } = buildPuzzle(grid.value);
+              const prefillArray = Array.from({ length: rows.value * cols.value }, (_, index) => userPrefills.value.get(index) ?? "");
+              const { content, metadata } = buildPuzzle(grid.value, prefillArray);
               if (!metadata.segments.length) {
                 throw new Error("No viable word segments. Add more open cells.");
               }
@@ -389,14 +577,14 @@
                 if (!selectedLengths.value.has(length)) {
                   throw new Error(`Enable length ${length} to solve this grid.`);
                 }
-                const words = wordSource.value[length] ?? [];
-                if (!words.length) {
+                const entries = wordSource.value.filter((entry) => entry.word.length === length);
+                if (!entries.length) {
                   throw new Error(`No words available for length ${length}.`);
                 }
-                activeWords[length] = words;
+                activeWords[length] = entries;
               }
               if (!activeWords[1]) {
-                const singles = wordSource.value[1] ?? letters.split("");
+                const singles = letters.split("").map((letter) => ({ word: letter, clues: [] }));
                 activeWords[1] = singles;
               }
               const wordData = buildWordData(activeWords);
@@ -413,14 +601,28 @@
                 return;
               }
               const assignment = result.solution.output.json.L ?? [];
-              const mapped = metadata.mapped.flat().map((cell) => {
+              const mapped = metadata.mapped.flat().map((cell, flatIndex) => {
                 if (cell === 0) return "";
-                const index = assignment[cell] ?? assignment[cell - 1];
-                const letter = typeof index === "number" ? letters[index - 1] ?? "" : "";
+                const assigned = assignment[cell] ?? assignment[cell - 1];
+                const letter = typeof assigned === "number" ? letters[assigned - 1] ?? "" : "";
+                if (userPrefills.value.has(flatIndex)) return userPrefills.value.get(flatIndex);
                 return letter;
               });
               solutionLetters.value = mapped;
               solveStatus.value = "Solved.";
+              const solvedSet = new Set();
+              metadata.mapped.forEach((row, rowIndex) => {
+                row.forEach((cellId, colIndex) => {
+                  if (!cellId) return;
+                  const flatIndex = rowIndex * metadata.cols + colIndex;
+                  if (userPrefills.value.has(flatIndex)) return;
+                  const value = assignment[cellId] ?? assignment[cellId - 1];
+                  if (typeof value === "number" && letters[value - 1]) {
+                    solvedSet.add(flatIndex);
+                  }
+                });
+              });
+              solvedCells.value = solvedSet;
               const words = metadata.segments.map((segment) => segment.map((id) => {
                 const index = assignment[id] ?? assignment[id - 1];
                 return typeof index === "number" ? letters[index - 1] ?? "" : "";
@@ -433,25 +635,18 @@
             }
           };
           const loadWordList = async () => {
-            const response = await fetch("./wordlist.txt");
+            const response = await fetch("./words.json");
             if (!response.ok) throw new Error("Failed to load word list.");
-            const text = await response.text();
-            const entries = text.split(/\r?\n/).map((word) => word.trim().toLowerCase()).filter(Boolean);
-            const grouped = {};
-            for (const word of entries) {
-              const len = word.length;
-              if (!grouped[len]) grouped[len] = new Set();
-              grouped[len].add(word);
-            }
-            const map = Object.fromEntries(Object.entries(grouped).map(([length, set]) => [Number(length), Array.from(set).sort()]));
-            return map;
+            const data = await response.json();
+            return data.map(([word, clues]) => ({ word, clues }));
           };
           const handlePointerUp = () => endDrag();
 
           onMounted(async () => {
             window.addEventListener("pointerup", handlePointerUp);
+            window.addEventListener("keydown", handleKey);
             try {
-              const [wordMap, modelText] = await Promise.all([
+              const [wordEntries, modelText] = await Promise.all([
                 loadWordList(),
                 fetch("./crosswords.mzn").then((res) => {
                   if (!res.ok) throw new Error("Missing crosswords.mzn");
@@ -463,8 +658,8 @@
                 wasmURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.wasm",
                 dataURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.data",
               });
-              wordSource.value = wordMap;
-              availableLengths.value = Object.keys(wordMap).map((value) => Number(value)).sort((a, b) => a - b);
+              wordSource.value = wordEntries;
+              availableLengths.value = Array.from(new Set(wordEntries.map((entry) => entry.word.length))).sort((a, b) => a - b);
               selectedLengths.value = new Set(availableLengths.value);
               crosswordsModel.value = modelText;
               ready.value = true;
@@ -474,7 +669,10 @@
             }
           });
 
-          onBeforeUnmount(() => window.removeEventListener("pointerup", handlePointerUp));
+          onBeforeUnmount(() => {
+            window.removeEventListener("pointerup", handlePointerUp);
+            window.removeEventListener("keydown", handleKey);
+          });
           return {
             rows,
             cols,
@@ -501,6 +699,13 @@
             solutionLetters,
             solutionWords,
             lastStatus,
+            fillEntireGrid,
+            clearSolve,
+            wordList,
+            exitGrid,
+            onCellPointerDown,
+            onCellPointerEnter,
+            onCellPointerLeave,
           };
         },
       });
