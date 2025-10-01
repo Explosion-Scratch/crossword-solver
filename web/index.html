@@ -157,7 +157,7 @@
                     >
                       <span class="flex-1">
                         <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
-                        <span class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue || 'No clue available' }}</span>
+                        <span v-if="segment.clue" class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue }}</span>
                       </span>
                       <span class="text-zinc-500">{{ segment.length }}L</span>
                     </button>
@@ -180,7 +180,7 @@
                     >
                       <span class="flex-1">
                         <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
-                        <span class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue || 'No clue available' }}</span>
+                        <span v-if="segment.clue" class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue }}</span>
                       </span>
                       <span class="text-zinc-500">{{ segment.length }}L</span>
                     </button>
@@ -453,10 +453,10 @@
           const userPrefills = ref(new Map());
           const worker = ref(null);
           const pendingRequest = ref(0);
-          const datasetEntries = ref([]);
-          const filteredWordSource = ref([]);
-          const availableLengths = ref([]);
+          const lengthMetadata = ref([]);
           const selectedLengths = ref(new Set());
+          const pendingWordRequests = ref(new Map());
+          const wordClueMap = ref(new Map());
           const crosswordsModel = ref("");
           const hoveredCell = ref(-1);
           const hoveredWordIndex = ref(-1);
@@ -476,17 +476,19 @@
           const openCellCount = computed(() => flatGrid.value.filter((cell) => cell !== "#").length);
           const blockedCellCount = computed(() => flatGrid.value.filter((cell) => cell === "#").length);
           const lengthOptions = computed(() =>
-            (availableLengths.value ?? []).map((length) => {
-              const count = filteredWordSource.value.filter((entry) => entry.word.length === length).length;
-              return {
-                length,
-                selected: selectedLengths.value.has(length),
-                count,
-                label: `${length}L`,
-              };
-            })
+            (lengthMetadata.value ?? []).map((meta) => ({
+              length: meta.length,
+              selected: selectedLengths.value.has(meta.length),
+              count: meta.count,
+              label: `${meta.length}L`,
+            }))
           );
-          const activeWordCount = computed(() => Array.from(selectedLengths.value || []).reduce((acc, length) => acc + filteredWordSource.value.filter((entry) => entry.word.length === length).length, 0));
+          const activeWordCount = computed(() => 
+            Array.from(selectedLengths.value || []).reduce((acc, length) => {
+              const meta = lengthMetadata.value.find((m) => m.length === length);
+              return acc + (meta?.count ?? 0);
+            }, 0)
+          );
           const disableSolve = computed(() => !ready.value || solving.value || loadError.value.length > 0 || !slotSummary.value.total);
           const applyCell = (index, value) => {
             const next = cloneMatrix(grid.value);
@@ -498,6 +500,7 @@
             solutionLetters.value = [];
             solutionWords.value = [];
             solvedCells.value = new Set();
+            wordClueMap.value = new Map();
           };
           const startDrag = (index) => {
             const current = flatGrid.value[index] ?? "_";
@@ -555,6 +558,7 @@
             solutionWords.value = [];
             userPrefills.value.clear();
             solvedCells.value = new Set();
+            wordClueMap.value = new Map();
           };
           watch([rows, cols], ([nextRows, nextCols], [prevRows, prevCols]) => {
             if (nextRows !== prevRows || nextCols !== prevCols) {
@@ -579,6 +583,7 @@
             solveStatus.value = "";
             lastStatus.value = "";
             hoveredWordIndex.value = -1;
+            wordClueMap.value = new Map();
           };
           const fillEntireGrid = (mode) => {
             const next = createMatrix(rows.value, cols.value);
@@ -595,6 +600,7 @@
             solveStatus.value = "";
             lastStatus.value = "";
             hoveredWordIndex.value = -1;
+            wordClueMap.value = new Map();
           };
           const clearSolve = () => {
             solutionLetters.value = [];
@@ -603,6 +609,7 @@
             solveStatus.value = "";
             lastStatus.value = "";
             hoveredWordIndex.value = -1;
+            wordClueMap.value = new Map();
           };
           const applyPrefill = (index, letter) => {
             const current = flatGrid.value[index] ?? "#";
@@ -621,15 +628,16 @@
               solutionLetters.value = [];
               solutionWords.value = [];
               solvedCells.value = new Set();
+              wordClueMap.value = new Map();
             }
             if (event.key === "Backspace" || event.key === "Delete") {
               applyPrefill(hoveredCell.value, "");
               solutionLetters.value = [];
               solutionWords.value = [];
               solvedCells.value = new Set();
+              wordClueMap.value = new Map();
             }
           };
-          const wordList = computed(() => filteredWordSource.value.filter((entry) => selectedLengths.value.has(entry.word.length)));
           const segmentDetails = computed(() => {
             if (!solutionLetters.value.length) return [];
             const activeGrid = grid.value;
@@ -650,26 +658,15 @@
                 return solutionLetters.value[flatIndex] ?? "";
               });
               const length = segment.cells.length;
-              const candidates = filteredWordSource.value.filter((entry) => {
-                if (entry.word.length !== length) return false;
-                for (let i = 0; i < length; i += 1) {
-                  const char = lettersInSegment[i];
-                  if (char && entry.word[i] !== char) return false;
-                }
-                return true;
-              });
               const joined = lettersInSegment.join("");
-              const exact = candidates.find((entry) => entry.word === joined);
-              const chosen = exact ?? candidates[0];
-              const clue = chosen?.clues?.[0] ?? "";
               const isFilled = lettersInSegment.length === length && lettersInSegment.every((char) => char && char.length === 1);
+              const clue = wordClueMap.value.get(joined) || "";
               return {
                 index: segmentIndex,
                 flatIndices,
                 letters: lettersInSegment,
                 length,
                 word: joined,
-                entry: chosen,
                 clue,
                 isFilled,
                 direction: segment.direction,
@@ -691,6 +688,7 @@
           });
 
           const findSegmentIndicesByCell = (index) => segmentsByCell.value.get(index) ?? [];
+
 
           watch(segmentDetails, (segments) => {
             if (hoveredWordIndex.value >= segments.length) {
@@ -813,17 +811,37 @@
                 throw new Error("No viable word segments. Add more open cells.");
               }
               const requiredLengths = Array.from(new Set(metadata.segments.map((segment) => segment.length)));
-              const activeWords = {};
               for (const length of requiredLengths) {
                 if (!selectedLengths.value.has(length)) {
                   throw new Error(`Enable length ${length} to solve this grid.`);
                 }
-                const entries = filteredWordSource.value.filter((entry) => entry.word.length === length);
-                if (!entries.length) {
+                const meta = lengthMetadata.value.find((m) => m.length === length);
+                if (!meta || meta.count === 0) {
                   throw new Error(`No words available for length ${length}.`);
                 }
-                activeWords[length] = entries;
               }
+              solveStatus.value = "Loading words…";
+              const activeWords = await new Promise((resolve, reject) => {
+                const requestId = Date.now();
+                const timeout = setTimeout(() => {
+                  pendingWordRequests.value.delete(requestId);
+                  reject(new Error("Word loading timed out"));
+                }, 30000);
+                pendingWordRequests.value.set(requestId, { 
+                  resolve: (data) => {
+                    clearTimeout(timeout);
+                    resolve(data);
+                  }, 
+                  reject: (error) => {
+                    clearTimeout(timeout);
+                    reject(error);
+                  }
+                });
+                worker.value.postMessage({
+                  type: "getWords",
+                  payload: { lengths: requiredLengths, requestId },
+                });
+              });
             if (!activeWords[1]) {
               const singles = letters.split("").map((letter) => ({ word: letter, clues: [] }));
               activeWords[1] = singles;
@@ -875,43 +893,38 @@
             solving.value = false;
           }
         };
-        const loadWordList = async () => {
-          const response = await fetch("./words.json");
-          if (!response.ok) throw new Error("Failed to load word list.");
-          const data = await response.json();
-          return data.map(([word, clues]) => ({
-            word,
-            clues: Array.from(
-              new Map(
-                (clues ?? [])
-                  .filter((clue) => typeof clue === "string")
-                  .map((clue) => {
-                    const normalized = normalizeClue(clue);
-                    return [normalized, clue];
-                  })
-              ).values()
-            ),
-          }));
-        };
-
-        const initWorker = (entries) => {
+        const initWorker = () => {
           const instance = new Worker(new URL("./clueWorker.js", import.meta.url), { type: "module" });
           worker.value = instance;
+          instance.onerror = (error) => {
+            loadError.value = "Worker failed to load: " + (error.message || String(error));
+          };
           instance.onmessage = (event) => {
             const { type, payload } = event.data ?? {};
             if (type === "initialized") {
-              datasetEntries.value = payload.entries ?? [];
-              filteredWordSource.value = datasetEntries.value;
-              availableLengths.value = Array.from(new Set(datasetEntries.value.map((entry) => entry.word.length))).sort((a, b) => a - b);
-              selectedLengths.value = new Set(availableLengths.value);
+              lengthMetadata.value = payload.lengthMetadata ?? [];
+              selectedLengths.value = new Set(lengthMetadata.value.map((meta) => meta.length));
               ready.value = true;
             }
             if (type === "filtered") {
               if (payload.requestId !== pendingRequest.value) return;
-              filteredWordSource.value = payload.entries ?? [];
+              lengthMetadata.value = payload.lengthMetadata ?? [];
+            }
+            if (type === "wordsReady") {
+              const request = pendingWordRequests.value.get(payload.requestId);
+              if (request) {
+                if (payload.clueMap) {
+                  wordClueMap.value = new Map(Object.entries(payload.clueMap));
+                }
+                request.resolve(payload.words);
+                pendingWordRequests.value.delete(payload.requestId);
+              }
+            }
+            if (type === "error") {
+              loadError.value = payload.message ?? "Worker error";
             }
           };
-          instance.postMessage({ type: "init", payload: { entries } });
+          instance.postMessage({ type: "init" });
         };
 
         const requestFilter = (minClue) => {
@@ -929,22 +942,18 @@
           window.addEventListener("pointerup", handlePointerUp);
           window.addEventListener("keydown", handleKey);
           try {
-            const [wordEntries, modelText] = await Promise.all([
-              loadWordList(),
-              fetch("./crosswords.mzn").then((res) => {
-                if (!res.ok) throw new Error("Missing crosswords.mzn");
-                return res.text();
-              }),
-            ]);
+            const modelText = await fetch("./crosswords.mzn").then((res) => {
+              if (!res.ok) throw new Error("Missing crosswords.mzn");
+              return res.text();
+            });
             await MiniZinc.init({
               workerURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc-worker.js",
               wasmURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.wasm",
               dataURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.data",
             });
-            availableLengths.value = Array.from(new Set(wordEntries.map((entry) => entry.word.length))).sort((a, b) => a - b);
             crosswordsModel.value = modelText;
             solveStatus.value = "Runtime ready.";
-            initWorker(wordEntries);
+            initWorker();
           } catch (error) {
             loadError.value = error.message ?? String(error);
           }
@@ -986,7 +995,6 @@
           lastStatus,
           fillEntireGrid,
           clearSolve,
-          wordList,
           segmentDetails,
           acrossClues,
           downClues,
