@@ -1,8 +1,14 @@
 {
-  "name": "crossword-solver",
-  "module": "index.ts",
+  "name": "crossword-composer",
+  "version": "1.0.0",
+  "description": "A web-based crossword puzzle solver using MiniZinc WebAssembly",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build": "bun run convert_wordlist.js",
+    "dev": "bun --watch web/index.html",
+    "start": "python -m http.server 8000 -d web"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -10,7 +16,16 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "minizinc": "^4.4.4",
-    "vue": "3"
-  }
+    "minizinc": "^4.4.4"
+  },
+  "keywords": [
+    "crossword",
+    "puzzle",
+    "solver",
+    "minizinc",
+    "constraint-programming",
+    "webassembly"
+  ],
+  "author": "",
+  "license": "MPL-2.0"
 }

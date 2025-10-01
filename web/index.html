@@ -18,7 +18,7 @@
     </script>
   </head>
   <body class="min-h-screen bg-zinc-950 text-zinc-100 font-mono">
-    <div id="app" class="mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-12">
+    <div id="app" class="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-4 py-8 sm:gap-10 sm:px-6 sm:py-12">
       <header class="flex flex-col gap-4">
         <h1 class="text-3xl tracking-tight">Crossword Composer</h1>
         <p class="max-w-2xl text-sm text-zinc-400">Design a crossword grid, pick curated word banks, and solve it instantly in the browser with the MiniZinc WebAssembly runtime.</p>
@@ -153,7 +153,7 @@
                       @mouseenter="onClueHover(segment)"
                       @mouseleave="onClueLeave"
                       class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
-                      :class="hoveredWordIndex === segment.index ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                      :class="hoveredSegmentIndices.has(segment.index) ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
                     >
                       <span class="flex-1">
                         <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
@@ -176,7 +176,7 @@
                       @mouseenter="onClueHover(segment)"
                       @mouseleave="onClueLeave"
                       class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
-                      :class="hoveredWordIndex === segment.index ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                      :class="hoveredSegmentIndices.has(segment.index) ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
                     >
                       <span class="flex-1">
                         <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
@@ -731,7 +731,22 @@
             hoveredCell.value = -1;
           };
           const updateHoveredSegments = (index) => {
-            const next = index >= 0 ? new Set(findSegmentIndicesByCell(index)) : new Set();
+            if (index < 0) {
+              hoveredSegmentIndices.value = new Set();
+              return;
+            }
+            const allIndices = findSegmentIndicesByCell(index);
+            const acrossIndex = allIndices.find(idx => {
+              const segment = segmentDetails.value[idx];
+              return segment && segment.direction === 'across';
+            });
+            const downIndex = allIndices.find(idx => {
+              const segment = segmentDetails.value[idx];
+              return segment && segment.direction === 'down';
+            });
+            const next = new Set();
+            if (acrossIndex !== undefined) next.add(acrossIndex);
+            if (downIndex !== undefined) next.add(downIndex);
             hoveredSegmentIndices.value = next;
           };
           
@@ -754,7 +769,7 @@
             
             const clueElement = container.querySelector(`[data-segment-index="${segmentIndex}"]`);
             if (clueElement) {
-              clueElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              clueElement.scrollIntoView({ behavior: 'smooth', block: 'center', container: 'nearest' });
             }
           };
           const onCellPointerDown = (index) => {
@@ -763,7 +778,7 @@
             const indices = findSegmentIndicesByCell(index);
             hoveredWordIndex.value = indices[0] ?? -1;
             updateHoveredSegments(index);
-            if (indices.length > 0) scrollToClue(indices[0]);
+            hoveredSegmentIndices.value.forEach(segmentIndex => scrollToClue(segmentIndex));
           };
           const onCellPointerEnter = (index) => {
             if (dragging.active) {
@@ -774,9 +789,9 @@
             const newHoveredIndex = indices[0] ?? hoveredWordIndex.value;
             if (newHoveredIndex !== hoveredWordIndex.value) {
               hoveredWordIndex.value = newHoveredIndex;
-              if (newHoveredIndex >= 0) scrollToClue(newHoveredIndex);
             }
             updateHoveredSegments(index);
+            hoveredSegmentIndices.value.forEach(segmentIndex => scrollToClue(segmentIndex));
           };
           const onCellPointerLeave = (index) => {
             leaveCell(index);
@@ -982,6 +997,7 @@
           onCellPointerEnter,
           onCellPointerLeave,
           hoveredWordIndex,
+          hoveredSegmentIndices,
           hoveredSegmentCells,
           acrossContainer,
           downContainer,

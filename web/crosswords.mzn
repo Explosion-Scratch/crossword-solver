@@ -44,8 +44,8 @@ string: problem_name;
 % ann: val_select;
 solve :: int_search(
         L,
-        first_fail,
-        indomain_min,
+        input_order,
+        indomain_random,
         complete)
     satisfy;
 
