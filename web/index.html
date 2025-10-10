@@ -110,6 +110,7 @@
             <span class="text-xs text-zinc-500">Click or drag to toggle blocks</span>
           </div>
               <div
+                ref="gridContainer"
                 class="mt-4 grid gap-px border border-zinc-800 bg-zinc-900/40 p-2"
                 :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }"
                 @pointerleave="exitGrid"
@@ -121,8 +122,9 @@
                   @pointerenter="onCellPointerEnter(cellIndex)"
                   @pointerleave="onCellPointerLeave(cellIndex)"
                   @pointerup="endDrag"
-                  class="flex aspect-square items-center justify-center text-base font-semibold uppercase transition"
+                  class="flex aspect-square items-center justify-center font-semibold uppercase transition"
                   :class="cellClass(cellIndex)"
+                  :style="{ fontSize: `${cellFontSize}px` }"
                 >
                   <span class="select-none">{{ cellLabel(cellIndex) }}</span>
                 </button>
@@ -724,6 +726,8 @@
           });
           const acrossContainer = ref(null);
           const downContainer = ref(null);
+          const gridContainer = ref(null);
+          const cellFontSize = ref(16);
           
           const exitGrid = () => {
             hoveredCell.value = -1;
@@ -936,11 +940,28 @@
             payload: { minClueCount: minClue, requestId },
           });
         };
+        
+        const updateCellFontSize = () => {
+          if (!gridContainer.value) return;
+          const containerWidth = gridContainer.value.offsetWidth;
+          const padding = 16;
+          const gap = 1 * (cols.value - 1);
+          const availableWidth = containerWidth - padding - gap;
+          const squareWidth = availableWidth / cols.value;
+          cellFontSize.value = Math.max(10, Math.floor(squareWidth * 0.5));
+        };
+        
         const handlePointerUp = () => endDrag();
+        const handleResize = () => updateCellFontSize();
+
+        watch([cols, rows], () => {
+          setTimeout(updateCellFontSize, 0);
+        });
 
         onMounted(async () => {
           window.addEventListener("pointerup", handlePointerUp);
           window.addEventListener("keydown", handleKey);
+          window.addEventListener("resize", handleResize);
           try {
             const modelText = await fetch("./crosswords.mzn").then((res) => {
               if (!res.ok) throw new Error("Missing crosswords.mzn");
@@ -954,6 +975,7 @@
             crosswordsModel.value = modelText;
             solveStatus.value = "Runtime ready.";
             initWorker();
+            setTimeout(updateCellFontSize, 0);
           } catch (error) {
             loadError.value = error.message ?? String(error);
           }
@@ -962,6 +984,7 @@
         onBeforeUnmount(() => {
           window.removeEventListener("pointerup", handlePointerUp);
           window.removeEventListener("keydown", handleKey);
+          window.removeEventListener("resize", handleResize);
           if (worker.value) {
             worker.value.terminate();
             worker.value = null;
@@ -1011,6 +1034,8 @@
           downContainer,
           onClueHover,
           onClueLeave,
+          gridContainer,
+          cellFontSize,
         };
       },
     });
