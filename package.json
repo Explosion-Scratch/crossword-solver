@@ -6,8 +6,11 @@
   "private": true,
   "scripts": {
     "build": "bun run convert_wordlist.js",
-    "dev": "bun --watch web/index.html",
-    "start": "python -m http.server 8000 -d web"
+    "dev": "cd web && python3 -m http.server 8000",
+    "start": "cd web && python3 -m http.server 8000",
+    "download:train": "bun run download-dataset.js train.csv",
+    "download:valid": "bun run download-dataset.js valid.csv",
+    "download": "npm run download:train && npm run download:valid"
   },
   "devDependencies": {
     "@types/bun": "latest"

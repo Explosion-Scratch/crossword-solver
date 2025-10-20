@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Crossword Composer</title>
+    <script>
+      // Detect if we're in development mode
+      const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      // Set base URL dynamically
+      if (!isDevelopment) {
+        const base = document.createElement('base');
+        base.href = '/crossword-solver/';
+        document.head.appendChild(base);
+      }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -898,7 +909,7 @@
           }
         };
         const initWorker = () => {
-          const instance = new Worker(new URL("./clueWorker.js", import.meta.url), { type: "module" });
+          const instance = new Worker(new URL("clueWorker.js", import.meta.url), { type: "module" });
           worker.value = instance;
           instance.onerror = (error) => {
             loadError.value = "Worker failed to load: " + (error.message || String(error));
@@ -963,7 +974,7 @@
           window.addEventListener("keydown", handleKey);
           window.addEventListener("resize", handleResize);
           try {
-            const modelText = await fetch("./crosswords.mzn").then((res) => {
+            const modelText = await fetch("crosswords.mzn").then((res) => {
               if (!res.ok) throw new Error("Missing crosswords.mzn");
               return res.text();
             });
