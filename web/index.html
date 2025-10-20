@@ -1,1056 +1,1491 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Crossword Composer</title>
-    <script>
-      // Detect if we're in development mode
-      const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      
-      // Set base URL dynamically
-      if (!isDevelopment) {
-        const base = document.createElement('base');
-        base.href = '/crossword-solver/';
-        document.head.appendChild(base);
-      }
-    </script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              mono: ["IBM Plex Mono", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", "monospace"],
-            },
-          },
-        },
-      };
-    </script>
-  </head>
-  <body class="min-h-screen bg-zinc-950 text-zinc-100 font-mono">
-    <div id="app" class="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-4 py-8 sm:gap-10 sm:px-6 sm:py-12">
-      <header class="flex flex-col gap-4">
-        <h1 class="text-3xl tracking-tight">Crossword Composer</h1>
-        <p class="max-w-2xl text-sm text-zinc-400">Design a crossword grid, pick curated word banks, and solve it instantly in the browser with the MiniZinc WebAssembly runtime.</p>
-      </header>
-      <main class="flex flex-col gap-10">
-        <section class="flex flex-col gap-6 rounded border border-zinc-800 bg-zinc-900/30 p-6 backdrop-blur">
-          <div class="grid gap-6 md:grid-cols-2">
-            <div class="flex flex-col gap-4">
-              <div class="flex items-center justify-between gap-4">
-                <label class="text-sm uppercase tracking-[0.2em] text-zinc-500">Grid Size</label>
-                <div class="flex items-center gap-3 text-sm text-zinc-300">
-                  <div class="flex items-center gap-2">
-                    <span>Rows</span>
-                    <input v-model.number="rows" type="number" min="3" max="18" class="w-16 bg-zinc-900 px-2 py-1 text-right text-sm text-zinc-100 outline-none ring-1 ring-inset ring-zinc-700 transition focus:ring-zinc-400" />
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span>Cols</span>
-                    <input v-model.number="cols" type="number" min="3" max="18" class="w-16 bg-zinc-900 px-2 py-1 text-right text-sm text-zinc-100 outline-none ring-1 ring-inset ring-zinc-700 transition focus:ring-zinc-400" />
-                  </div>
-                </div>
-              </div>
-              <button @click="resetGrid" class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] text-zinc-200 transition hover:border-zinc-400 hover:text-white">Clear Grid</button>
-              <div class="rounded border border-zinc-800 bg-zinc-950/70 p-3 text-xs text-zinc-400">
-                <div class="flex justify-between">
-                  <span>Active cells</span>
-                  <span>{{ openCellCount }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span>Black cells</span>
-                  <span>{{ blockedCellCount }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span>Word slots</span>
-                  <span>{{ slotSummary.total }}</span>
-                </div>
-              </div>
-            </div>
-            <div class="flex flex-col gap-3">
-              <div class="flex items-center justify-between gap-3">
-                <label class="text-sm uppercase tracking-[0.2em] text-zinc-500">Word Lengths</label>
-                <div class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                  <span>Min clues</span>
-                  <input v-model.number="minClueCount" type="number" min="1" class="w-16 bg-zinc-900 px-2 py-1 text-right text-sm text-zinc-100 outline-none ring-1 ring-inset ring-zinc-700 transition focus:ring-zinc-400" />
-                </div>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button v-for="option in lengthOptions" :key="option.length" @click="toggleLength(option.length)" :class="[
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Crossword Composer</title>
+        <script>
+            // Detect if we're in development mode
+            const isDevelopment =
+                window.location.hostname === "localhost" ||
+                window.location.hostname === "127.0.0.1";
+
+            // Set base URL dynamically
+            if (!isDevelopment) {
+                const base = document.createElement("base");
+                base.href = "/crossword-solver/";
+                document.head.appendChild(base);
+            }
+        </script>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        fontFamily: {
+                            mono: [
+                                "IBM Plex Mono",
+                                "ui-monospace",
+                                "SFMono-Regular",
+                                "Menlo",
+                                "Monaco",
+                                "Consolas",
+                                "Liberation Mono",
+                                "Courier New",
+                                "monospace",
+                            ],
+                        },
+                    },
+                },
+            };
+        </script>
+    </head>
+    <body class="min-h-screen bg-zinc-950 text-zinc-100 font-mono">
+        <div
+            id="app"
+            class="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-4 py-8 sm:gap-10 sm:px-6 sm:py-12"
+        >
+            <header class="flex flex-col gap-4">
+                <h1 class="text-3xl tracking-tight">Crossword Composer</h1>
+                <p class="max-w-2xl text-sm text-zinc-400">
+                    Design a crossword grid, pick curated word banks, and solve
+                    it instantly in the browser with the MiniZinc WebAssembly
+                    runtime.
+                </p>
+            </header>
+            <main class="flex flex-col gap-10">
+                <section
+                    class="flex flex-col gap-6 rounded border border-zinc-800 bg-zinc-900/30 p-6 backdrop-blur"
+                >
+                    <div class="grid gap-6 md:grid-cols-2">
+                        <div class="flex flex-col gap-4">
+                            <div
+                                class="flex items-center justify-between gap-4"
+                            >
+                                <label
+                                    class="text-sm uppercase tracking-[0.2em] text-zinc-500"
+                                    >Grid Size</label
+                                >
+                                <div
+                                    class="flex items-center gap-3 text-sm text-zinc-300"
+                                >
+                                    <div class="flex items-center gap-2">
+                                        <span>Rows</span>
+                                        <input
+                                            v-model.number="rows"
+                                            type="number"
+                                            min="3"
+                                            max="18"
+                                            class="w-16 bg-zinc-900 px-2 py-1 text-right text-sm text-zinc-100 outline-none ring-1 ring-inset ring-zinc-700 transition focus:ring-zinc-400"
+                                        />
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span>Cols</span>
+                                        <input
+                                            v-model.number="cols"
+                                            type="number"
+                                            min="3"
+                                            max="18"
+                                            class="w-16 bg-zinc-900 px-2 py-1 text-right text-sm text-zinc-100 outline-none ring-1 ring-inset ring-zinc-700 transition focus:ring-zinc-400"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                @click="resetGrid"
+                                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] text-zinc-200 transition hover:border-zinc-400 hover:text-white"
+                            >
+                                Clear Grid
+                            </button>
+                            <div
+                                class="rounded border border-zinc-800 bg-zinc-950/70 p-3 text-xs text-zinc-400"
+                            >
+                                <div class="flex justify-between">
+                                    <span>Active cells</span>
+                                    <span>{{ openCellCount }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Black cells</span>
+                                    <span>{{ blockedCellCount }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Word slots</span>
+                                    <span>{{ slotSummary.total }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-3">
+                            <div
+                                class="flex items-center justify-between gap-3"
+                            >
+                                <label
+                                    class="text-sm uppercase tracking-[0.2em] text-zinc-500"
+                                    >Word Lengths</label
+                                >
+                                <div
+                                    class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500"
+                                >
+                                    <span>Min clues</span>
+                                    <input
+                                        v-model.number="minClueCount"
+                                        type="number"
+                                        min="1"
+                                        class="w-16 bg-zinc-900 px-2 py-1 text-right text-sm text-zinc-100 outline-none ring-1 ring-inset ring-zinc-700 transition focus:ring-zinc-400"
+                                    />
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button
+                                    v-for="option in lengthOptions"
+                                    :key="option.length"
+                                    @click="toggleLength(option.length)"
+                                    :class="[
                     'rounded border px-3 py-2 text-xs uppercase tracking-[0.2em] transition',
                     option && option.selected ? 'border-zinc-200 bg-zinc-100 text-zinc-900' : 'border-zinc-700 bg-zinc-950 text-zinc-200 hover:border-zinc-400',
-                  ]">
-                  {{ option?.label || '' }}
-                </button>
-              </div>
-              <div class="rounded border border-zinc-800 bg-zinc-950/70 p-3 text-xs text-zinc-400">
-                <div class="flex justify-between">
-                  <span>Selected words</span>
-                  <span>{{ activeWordCount }}</span>
-                </div>
-                <div class="flex flex-wrap gap-2 pt-3">
-                  <span v-for="option in lengthOptions" :key="`length-chip-${option.length}`" class="rounded-full border border-zinc-800 px-2 py-1 text-[0.65rem] uppercase tracking-[0.25em] text-zinc-500" v-if="option && option.selected">
-                    {{ option.length }}&nbsp;({{ option.count }})
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="grid gap-6 md:grid-cols-[minmax(0,_2fr)_minmax(0,_1fr)]">
-            <div class="rounded border border-zinc-800 bg-zinc-950/70 p-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <h2 class="text-sm uppercase tracking-[0.2em] text-zinc-500">Layout</h2>
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  @click="fillEntireGrid('blocked')"
-                  class="h-6 w-6 rounded border border-zinc-700 bg-zinc-900 transition hover:border-zinc-400"
-                  aria-label="Fill entire grid with blocks"
-                  title="Fill entire grid with blocks"
-                ></button>
-                <button
-                  type="button"
-                  @click="fillEntireGrid('open')"
-                  class="h-6 w-6 rounded border border-zinc-700 bg-zinc-950 transition hover:border-zinc-400"
-                  aria-label="Clear all blocks"
-                  title="Clear all blocks"
-                ></button>
-              </div>
-            </div>
-            <span class="text-xs text-zinc-500">Click or drag to toggle blocks</span>
-          </div>
-              <div
-                ref="gridContainer"
-                class="mt-4 grid gap-px border border-zinc-800 bg-zinc-900/40 p-2"
-                :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }"
-                @pointerleave="exitGrid"
-              >
-                <button
-                  v-for="(cell, cellIndex) in flatGrid"
-                  :key="cellIndex"
-                  @pointerdown="onCellPointerDown(cellIndex)"
-                  @pointerenter="onCellPointerEnter(cellIndex)"
-                  @pointerleave="onCellPointerLeave(cellIndex)"
-                  @pointerup="endDrag"
-                  class="flex aspect-square items-center justify-center font-semibold uppercase transition"
-                  :class="cellClass(cellIndex)"
-                  :style="{ fontSize: `${cellFontSize}px` }"
-                >
-                  <span class="select-none">{{ cellLabel(cellIndex) }}</span>
-                </button>
-              </div>
-            </div>
-            <div class="flex flex-col gap-4 rounded border border-zinc-800 bg-zinc-950/70 p-4">
-              <h2 class="text-sm uppercase tracking-[0.2em] text-zinc-500">Solver</h2>
-              <div class="space-y-2 text-sm text-zinc-300">
-                <p v-if="!ready && !loadError">Preparing MiniZinc runtime…</p>
-                <p v-if="loadError" class="text-red-400">{{ loadError }}</p>
-                <p v-if="solveStatus">{{ solveStatus }}</p>
-              </div>
-              <div v-if="solutionLetters.length && (acrossClues.length || downClues.length)" class="grid gap-2">
-                <div class="flex items-center justify-between px-1">
-                  <span class="text-xs uppercase tracking-[0.2em] text-zinc-500">Clues</span>
-                  <span class="text-xs text-zinc-400">{{ clueHeadline }}</span>
-                </div>
-                
-                <!-- Across Clues -->
-                <div v-if="acrossClues.length" class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-2">
-                  <h3 class="px-1 text-xs font-medium uppercase tracking-[0.25em] text-zinc-400">Across</h3>
-                  <div ref="acrossContainer" class="grid max-h-32 gap-1 overflow-y-auto pr-1">
-                    <button
-                      v-for="segment in acrossClues"
-                      :key="`across-${segment.index}`"
-                      :data-segment-index="segment.index"
-                      :data-direction="'across'"
-                      @mouseenter="onClueHover(segment)"
-                      @mouseleave="onClueLeave"
-                      class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
-                      :class="hoveredSegmentIndices.has(segment.index) ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                  ]"
+                                >
+                                    {{ option?.label || '' }}
+                                </button>
+                            </div>
+                            <div
+                                class="rounded border border-zinc-800 bg-zinc-950/70 p-3 text-xs text-zinc-400"
+                            >
+                                <div class="flex justify-between">
+                                    <span>Selected words</span>
+                                    <span>{{ activeWordCount }}</span>
+                                </div>
+                                <div class="flex flex-wrap gap-2 pt-3">
+                                    <span
+                                        v-for="option in lengthOptions"
+                                        :key="`length-chip-${option.length}`"
+                                        class="rounded-full border border-zinc-800 px-2 py-1 text-[0.65rem] uppercase tracking-[0.25em] text-zinc-500"
+                                        v-if="option && option.selected"
+                                    >
+                                        {{ option.length }}&nbsp;({{
+                                        option.count }})
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        class="grid gap-6 md:grid-cols-[minmax(0,_2fr)_minmax(0,_1fr)]"
                     >
-                      <span class="flex-1">
-                        <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
-                        <span v-if="segment.clue" class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue }}</span>
-                      </span>
-                      <span class="text-zinc-500">{{ segment.length }}L</span>
-                    </button>
-                  </div>
-                </div>
-                
-                <!-- Down Clues -->
-                <div v-if="downClues.length" class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-2">
-                  <h3 class="px-1 text-xs font-medium uppercase tracking-[0.25em] text-zinc-400">Down</h3>
-                  <div ref="downContainer" class="grid max-h-32 gap-1 overflow-y-auto pr-1">
-                    <button
-                      v-for="segment in downClues"
-                      :key="`down-${segment.index}`"
-                      :data-segment-index="segment.index"
-                      :data-direction="'down'"
-                      @mouseenter="onClueHover(segment)"
-                      @mouseleave="onClueLeave"
-                      class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
-                      :class="hoveredSegmentIndices.has(segment.index) ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
-                    >
-                      <span class="flex-1">
-                        <span class="text-zinc-200">{{ segment.number }}. {{ segment.word || '—' }}</span>
-                        <span v-if="segment.clue" class="block text-[0.65rem] normal-case text-zinc-500">{{ segment.clue }}</span>
-                      </span>
-                      <span class="text-zinc-500">{{ segment.length }}L</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <button
-                @click="solve"
-                :disabled="disableSolve"
-                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] transition disabled:cursor-not-allowed disabled:opacity-50 hover:border-zinc-300 hover:text-white"
-              >
-                {{ solving ? 'Solving…' : 'Solve Crossword' }}
-              </button>
-              <button
-                v-if="solutionLetters.length"
-                @click="clearSolve"
-                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] transition hover:border-zinc-300 hover:text-white"
-              >
-                Clear Solve
-              </button>
-            </div>
-          </div>
-        </section>
-        
-      </main>
-    </div>
-    <script type="module">
-      import { createApp, ref, reactive, computed, watch, onMounted, onBeforeUnmount } from "https://unpkg.com/vue@3/dist/vue.esm-browser.js";
-      import * as MiniZinc from "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.mjs";
+                        <div
+                            class="rounded border border-zinc-800 bg-zinc-950/70 p-4"
+                        >
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <h2
+                                        class="text-sm uppercase tracking-[0.2em] text-zinc-500"
+                                    >
+                                        Layout
+                                    </h2>
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            @click="fillEntireGrid('blocked')"
+                                            class="h-6 w-6 rounded border border-zinc-700 bg-zinc-900 transition hover:border-zinc-400"
+                                            aria-label="Fill entire grid with blocks"
+                                            title="Fill entire grid with blocks"
+                                        ></button>
+                                        <button
+                                            type="button"
+                                            @click="fillEntireGrid('open')"
+                                            class="h-6 w-6 rounded border border-zinc-700 bg-zinc-950 transition hover:border-zinc-400"
+                                            aria-label="Clear all blocks"
+                                            title="Clear all blocks"
+                                        ></button>
+                                    </div>
+                                </div>
+                                <span class="text-xs text-zinc-500"
+                                    >Click or drag to toggle blocks</span
+                                >
+                            </div>
+                            <div
+                                ref="gridContainer"
+                                class="mt-4 grid gap-px border border-zinc-800 bg-zinc-900/40 p-2"
+                                :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }"
+                                @pointerleave="exitGrid"
+                            >
+                                <button
+                                    v-for="(cell, cellIndex) in flatGrid"
+                                    :key="cellIndex"
+                                    @pointerdown="onCellPointerDown(cellIndex)"
+                                    @pointerenter="onCellPointerEnter(cellIndex)"
+                                    @pointerleave="onCellPointerLeave(cellIndex)"
+                                    @pointerup="endDrag"
+                                    class="flex aspect-square items-center justify-center font-semibold uppercase transition"
+                                    :class="cellClass(cellIndex)"
+                                    :style="{ fontSize: `${cellFontSize}px` }"
+                                >
+                                    <span class="select-none"
+                                        >{{ cellLabel(cellIndex) }}</span
+                                    >
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            class="flex flex-col gap-4 rounded border border-zinc-800 bg-zinc-950/70 p-4"
+                        >
+                            <h2
+                                class="text-sm uppercase tracking-[0.2em] text-zinc-500"
+                            >
+                                Solver
+                            </h2>
+                            <div class="space-y-2 text-sm text-zinc-300">
+                                <p v-if="!ready && !loadError">
+                                    Preparing MiniZinc runtime…
+                                </p>
+                                <p v-if="loadError" class="text-red-400">
+                                    {{ loadError }}
+                                </p>
+                                <p v-if="solveStatus">{{ solveStatus }}</p>
+                            </div>
+                            <div
+                                v-if="solutionLetters.length && (acrossClues.length || downClues.length)"
+                                class="grid gap-2"
+                            >
+                                <div
+                                    class="flex items-center justify-between px-1"
+                                >
+                                    <span
+                                        class="text-xs uppercase tracking-[0.2em] text-zinc-500"
+                                        >Clues</span
+                                    >
+                                    <span class="text-xs text-zinc-400"
+                                        >{{ clueHeadline }}</span
+                                    >
+                                </div>
 
-      const letters = "abcdefghijklmnopqrstuvwxyz";
-      const normalizeClue = (value) =>
-        value
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-      const createMatrix = (r, c) => Array.from({ length: r }, () => Array.from({ length: c }, () => "_"));
-      const cloneMatrix = (matrix) => matrix.map((row) => row.slice());
-      const buildProblemMatrix = (matrix) => {
-        let id = 1;
-        const mapped = matrix.map((row) => row.map((cell) => {
-          if (cell === "#") return 0;
-          const value = id;
-          id += 1;
-          return value;
-        }));
-        return { mapped, count: id - 1 };
-      };
-      const collectSegments = (grid, rows, cols) => {
-        const segments = [];
-        const extract = (sourceRows, sourceCols, mapper) => {
-          for (let r = 0; r < sourceRows; r += 1) {
-            const line = [];
-            for (let c = 0; c < sourceCols; c += 1) {
-              const value = mapper(r, c);
-              if (value === 0) {
-                if (line.length > 1) segments.push([...line]);
-                line.length = 0;
-              } else {
-                line.push(value);
-              }
-            }
-            if (line.length > 1) segments.push([...line]);
-          }
-        };
-        extract(rows, cols, (r, c) => grid[r][c]);
-        extract(cols, rows, (r, c) => grid[c][r]);
-        return segments;
-      };
-      const collectSegmentsWithDirection = (grid, rows, cols) => {
-        const segments = [];
-        const numberedCells = new Map();
-        let clueNumber = 1;
-        
-        // First pass: assign numbers to cells that start across or down words
-        for (let r = 0; r < rows; r += 1) {
-          for (let c = 0; c < cols; c += 1) {
-            if (grid[r][c] === 0) continue;
-            
-            const startsAcross = (c === 0 || grid[r][c - 1] === 0) && c + 1 < cols && grid[r][c + 1] !== 0;
-            const startsDown = (r === 0 || grid[r - 1][c] === 0) && r + 1 < rows && grid[r + 1][c] !== 0;
-            
-            if (startsAcross || startsDown) {
-              numberedCells.set(`${r},${c}`, clueNumber++);
-            }
-          }
-        }
-        
-        // Extract across segments
-        for (let r = 0; r < rows; r += 1) {
-          const line = [];
-          let startCol = -1;
-          for (let c = 0; c < cols; c += 1) {
-            const value = grid[r][c];
-            if (value === 0) {
-              if (line.length > 1) {
-                const number = numberedCells.get(`${r},${startCol}`) ?? 0;
-                segments.push({ cells: [...line], direction: 'across', number });
-              }
-              line.length = 0;
-              startCol = -1;
-            } else {
-              if (line.length === 0) startCol = c;
-              line.push(value);
-            }
-          }
-          if (line.length > 1) {
-            const number = numberedCells.get(`${r},${startCol}`) ?? 0;
-            segments.push({ cells: [...line], direction: 'across', number });
-          }
-        }
-        
-        // Extract down segments
-        for (let c = 0; c < cols; c += 1) {
-          const line = [];
-          let startRow = -1;
-          for (let r = 0; r < rows; r += 1) {
-            const value = grid[r][c];
-            if (value === 0) {
-              if (line.length > 1) {
-                const number = numberedCells.get(`${startRow},${c}`) ?? 0;
-                segments.push({ cells: [...line], direction: 'down', number });
-              }
-              line.length = 0;
-              startRow = -1;
-            } else {
-              if (line.length === 0) startRow = r;
-              line.push(value);
-            }
-          }
-          if (line.length > 1) {
-            const number = numberedCells.get(`${startRow},${c}`) ?? 0;
-            segments.push({ cells: [...line], direction: 'down', number });
-          }
-        }
-        
-        return segments;
-      };
-      const gridPresentation = (matrix) => 
-        matrix
-            .map((row) => `%   ${row.map((cell) => (cell === "#" ? "#" : "_")).join(" ")}`).join("\n");
-      const buildPuzzle = (matrix, prefills = []) => {
-        const rows = matrix.length;
-        const cols = matrix[0]?.length ?? 0;
-        const { mapped, count } = buildProblemMatrix(matrix);
-        const segments = collectSegments(mapped, rows, cols);
-        const maxSegmentLength = segments.reduce((acc, segment) => Math.max(acc, segment.length), 1);
-        const segmentLines = segments.map((segment) => {
-          const padded = segment.concat(Array.from({ length: Math.max(maxSegmentLength - segment.length, 0) }, () => 0));
-          return `${padded.join(", ")},`;
-        });
-        const problemLines = mapped.map((row) => `${row.join(", ")},`);
-        const tables = segments.map((segment) => `table([${segment.map((value) => `L[${value}]`).join(", ")}], words${segment.length})`);
-        const tableBlock = tables.length ? tables.join(" \n/\\ ") : "true";
-        const assignments = [];
-        if (Array.isArray(prefills) && prefills.length) {
-          for (let index = 0; index < prefills.length; index += 1) {
-            const letter = prefills[index];
-            if (!letter) continue;
-            const row = Math.floor(index / cols);
-            const col = index % cols;
-            const cellId = mapped[row]?.[col] ?? 0;
-            if (!cellId) continue;
-            const letterIndex = letters.indexOf(letter);
-            if (letterIndex === -1) continue;
-            assignments.push(`L[${cellId}] = ${letterIndex + 1}`);
-          }
-        }
-        const constraintParts = [];
-        if (tableBlock !== "true") constraintParts.push(tableBlock);
-        if (assignments.length) constraintParts.push(...assignments);
-        const constraintBlock = constraintParts.length ? constraintParts.join(" \n/\\ ") : "true";
-        const content = [
-          "%",
-          "% Generated crossword",
-          "%",
-          `% (generated ${new Date().toISOString()} by browser grid)`,
-          "%",
-          "%",
-          "% Problem to solve:",
-          "%",
-          gridPresentation(matrix),
-          "",
-          "include \"crosswords.mzn\";",
-          "",
-          "problem_name = \"crossword\";",
-          "",
-          `% number of letters to assign`,
-          `N = ${count};`,
-          "",
-          "% distinct words",
-          "require_distinct_words = 1;",
-          "",
-          "constraint",
-          `  ${constraintBlock}`,
-          ";",
-          "",
-          "% The segments (words)",
-          "% (0 for fill outs)",
-          `int: max_length = ${maxSegmentLength};`,
-          `int: num_segments = ${segments.length};`,
-          "array[1..num_segments, 1..max_length] of int: segments = array2d(1..num_segments, 1..max_length,",
-          "[",
-          segmentLines.join("\n"),
-          "]);",
-          "",
-          "",
-          "% Problem where each cell is assigned a unique index.",
-          "% (0 means blocked cell)",
-          `int: rows = ${rows};`,
-          `int: cols = ${cols};`,
-          "array[1..rows, 1..cols] of int: problem = array2d(1..rows, 1..cols,",
-          "[",
-          problemLines.join("\n"),
-          "]);",
-          "",
-        ].join("\n");
-        return { content, metadata: { mapped, segments, rows, cols } };
-      };
-      const buildWordData = (entriesByLength) => {
-        const lengths = Object.keys(entriesByLength)
-          .map((value) => Number(value))
-          .sort((a, b) => a - b);
-        const blocks = lengths
-          .filter((length) => entriesByLength[length]?.length)
-          .map((length) => {
-            const entries = entriesByLength[length];
-            const rows = entries
-              .map(({ word }) => word.split("").map((letter) => letters.indexOf(letter) + 1))
-              .map((codes) => `${codes.join(", ")},`).join("\n");
-            return [
-              `int: num_words${length} = ${entries.length};`,
-              `array[1..num_words${length}, 1..${length}] of int: words${length} = array2d(1..num_words${length}, 1..${length},`,
-              "[",
-              rows,
-              "]);",
-              "",
-            ].join("\n");
-          });
-        return blocks.join("\n");
-      };
-      const deriveSlots = (matrix) => {
-        const rows = matrix.length;
-        const cols = matrix[0]?.length ?? 0;
-        const { mapped } = buildProblemMatrix(matrix);
-        const segments = collectSegments(mapped, rows, cols);
-        const summary = segments.reduce((acc, segment) => {
-          const len = segment.length;
-          acc[len] = (acc[len] ?? 0) + 1;
-          acc.total += 1;
-          return acc;
-        }, { total: 0 });
-        return summary;
-      };
-      const app = createApp({
-        setup() {
-          const rows = ref(8);
-          const cols = ref(8);
-          const grid = ref(createMatrix(rows.value, cols.value));
-          const dragging = reactive({ active: false, next: "#", startIndex: -1 });
-          const ready = ref(false);
-          const loadError = ref("");
-          const solving = ref(false);
-          const solveStatus = ref("");
-          const lastStatus = ref("");
-          const solutionLetters = ref([]);
-          const solutionWords = ref([]);
-          const solvedCells = ref(new Set());
-          const userPrefills = ref(new Map());
-          const worker = ref(null);
-          const pendingRequest = ref(0);
-          const lengthMetadata = ref([]);
-          const selectedLengths = ref(new Set());
-          const pendingWordRequests = ref(new Map());
-          const wordClueMap = ref(new Map());
-          const crosswordsModel = ref("");
-          const hoveredCell = ref(-1);
-          const hoveredWordIndex = ref(-1);
-          const hoveredSegmentIndices = ref(new Set());
-          const minClueCount = ref(1);
-          const normalizedMinClue = computed(() => {
-            const value = Number(minClueCount.value);
-            if (!Number.isFinite(value) || value < 1) return 1;
-            return Math.floor(value);
-          });
-          watch(normalizedMinClue, (value) => {
-            if (minClueCount.value !== value) minClueCount.value = value;
-            requestFilter(value);
-          });
-          const slotSummary = computed(() => deriveSlots(grid.value || createMatrix(rows.value, cols.value)));
-          const flatGrid = computed(() => (grid.value || []).flat());
-          const openCellCount = computed(() => flatGrid.value.filter((cell) => cell !== "#").length);
-          const blockedCellCount = computed(() => flatGrid.value.filter((cell) => cell === "#").length);
-          const lengthOptions = computed(() =>
-            (lengthMetadata.value ?? []).map((meta) => ({
-              length: meta.length,
-              selected: selectedLengths.value.has(meta.length),
-              count: meta.count,
-              label: `${meta.length}L`,
-            }))
-          );
-          const activeWordCount = computed(() => 
-            Array.from(selectedLengths.value || []).reduce((acc, length) => {
-              const meta = lengthMetadata.value.find((m) => m.length === length);
-              return acc + (meta?.count ?? 0);
-            }, 0)
-          );
-          const disableSolve = computed(() => !ready.value || solving.value || loadError.value.length > 0 || !slotSummary.value.total);
-          const applyCell = (index, value) => {
-            const next = cloneMatrix(grid.value);
-            const r = Math.floor(index / cols.value);
-            const c = index % cols.value;
-            if (!next[r]) return;
-            next[r][c] = value;
-            grid.value = next;
-            solutionLetters.value = [];
-            solutionWords.value = [];
-            solvedCells.value = new Set();
-            wordClueMap.value = new Map();
-          };
-          const startDrag = (index) => {
-            const current = flatGrid.value[index] ?? "_";
-            const next = current === "#" ? "_" : "#";
-            dragging.active = true;
-            dragging.next = next;
-            dragging.startIndex = index;
-            applyCell(index, next);
-            userPrefills.value.delete(index);
-          };
-          const dragCell = (index) => {
-            if (!dragging.active) return;
-            applyCell(index, dragging.next);
-            userPrefills.value.delete(index);
-          };
-          const endDrag = () => {
-            dragging.active = false;
-            dragging.startIndex = -1;
-          };
-          const cellClass = (index) => {
-            const current = flatGrid.value[index] ?? "_";
-            const prefilled = userPrefills.value.has(index);
-            const solved = solvedCells.value.has(index);
-            const hovered = hoveredCell.value === index || hoveredSegmentCells.value.has(index);
-            const letter = solutionLetters.value[index] ?? "";
-            if (current === "#") return "bg-zinc-900 text-zinc-600 border border-zinc-800 hover:border-zinc-700";
-            if (prefilled) return hovered ? "bg-zinc-950 text-white border border-zinc-400" : "bg-zinc-950 text-zinc-100 border border-zinc-600 hover:border-zinc-400";
-            if (solved && letter) return hovered ? "bg-green-900/30 text-zinc-100 border border-green-400" : "bg-green-900/20 text-zinc-100 border border-green-600/40 hover:border-green-400";
-            if (hovered) return "bg-zinc-950 text-zinc-100 border border-zinc-400";
-            if (letter) return "bg-zinc-950 text-zinc-100 border border-zinc-700 hover:border-zinc-400";
-            return "bg-zinc-950 text-zinc-300 border border-zinc-800 hover:border-zinc-500";
-          };
-          const cellLabel = (index) => {
-            const current = flatGrid.value[index] ?? "_";
-            if (current === "#") return "";
-            if (userPrefills.value.has(index)) return userPrefills.value.get(index).toUpperCase();
-            const letter = solutionLetters.value[index];
-            return letter ? letter.toUpperCase() : "";
-          };
-          const enterCell = (index) => {
-            hoveredCell.value = index;
-          };
-          const leaveCell = (index) => {
-            if (hoveredCell.value === index) hoveredCell.value = -1;
-          };
-          const resizeGrid = (nextRows, nextCols) => {
-            const next = createMatrix(nextRows, nextCols);
-            for (let r = 0; r < Math.min(nextRows, grid.value.length); r += 1) {
-              for (let c = 0; c < Math.min(nextCols, grid.value[0].length); c += 1) {
-                next[r][c] = grid.value[r][c];
-              }
-            }
-            grid.value = next;
-            solutionLetters.value = [];
-            solutionWords.value = [];
-            userPrefills.value.clear();
-            solvedCells.value = new Set();
-            wordClueMap.value = new Map();
-          };
-          watch([rows, cols], ([nextRows, nextCols], [prevRows, prevCols]) => {
-            if (nextRows !== prevRows || nextCols !== prevCols) {
-              resizeGrid(nextRows, nextCols);
-            }
-          });
-          const toggleLength = (length) => {
-            const next = new Set(selectedLengths.value);
-            if (next.has(length)) {
-              next.delete(length);
-            } else {
-              next.add(length);
-            }
-            selectedLengths.value = next;
-          };
-          const resetGrid = () => {
-            grid.value = createMatrix(rows.value, cols.value);
-            solutionLetters.value = [];
-            solutionWords.value = [];
-            userPrefills.value.clear();
-            solvedCells.value = new Set();
-            solveStatus.value = "";
-            lastStatus.value = "";
-            hoveredWordIndex.value = -1;
-            wordClueMap.value = new Map();
-          };
-          const fillEntireGrid = (mode) => {
-            const next = createMatrix(rows.value, cols.value);
-            for (let r = 0; r < rows.value; r += 1) {
-              for (let c = 0; c < cols.value; c += 1) {
-                next[r][c] = mode === "blocked" ? "#" : "_";
-              }
-            }
-            grid.value = next;
-            userPrefills.value.clear();
-            solutionLetters.value = [];
-            solutionWords.value = [];
-            solvedCells.value = new Set();
-            solveStatus.value = "";
-            lastStatus.value = "";
-            hoveredWordIndex.value = -1;
-            wordClueMap.value = new Map();
-          };
-          const clearSolve = () => {
-            solutionLetters.value = [];
-            solutionWords.value = [];
-            solvedCells.value = new Set();
-            solveStatus.value = "";
-            lastStatus.value = "";
-            hoveredWordIndex.value = -1;
-            wordClueMap.value = new Map();
-          };
-          const applyPrefill = (index, letter) => {
-            const current = flatGrid.value[index] ?? "#";
-            if (current === "#") return;
-            if (letter) {
-              userPrefills.value.set(index, letter);
-            } else {
-              userPrefills.value.delete(index);
-            }
-          };
-          const handleKey = (event) => {
-            if (hoveredCell.value < 0) return;
-            const key = event.key.toLowerCase();
-            if (key.length === 1 && letters.includes(key)) {
-              applyPrefill(hoveredCell.value, key);
-              solutionLetters.value = [];
-              solutionWords.value = [];
-              solvedCells.value = new Set();
-              wordClueMap.value = new Map();
-            }
-            if (event.key === "Backspace" || event.key === "Delete") {
-              applyPrefill(hoveredCell.value, "");
-              solutionLetters.value = [];
-              solutionWords.value = [];
-              solvedCells.value = new Set();
-              wordClueMap.value = new Map();
-            }
-          };
-          const segmentDetails = computed(() => {
-            if (!solutionLetters.value.length) return [];
-            const activeGrid = grid.value;
-            if (!activeGrid.length) return [];
-            const { mapped } = buildProblemMatrix(activeGrid);
-            const segments = collectSegmentsWithDirection(mapped, rows.value, cols.value);
-            const idToIndex = new Map();
-            mapped.forEach((row, rowIndex) => {
-              row.forEach((cellId, colIndex) => {
-                if (!cellId) return;
-                idToIndex.set(cellId, rowIndex * cols.value + colIndex);
-              });
-            });
-            return segments.map((segment, segmentIndex) => {
-              const flatIndices = segment.cells.map((id) => idToIndex.get(id)).filter((value) => typeof value === "number");
-              const lettersInSegment = flatIndices.map((flatIndex) => {
-                if (userPrefills.value.has(flatIndex)) return userPrefills.value.get(flatIndex);
-                return solutionLetters.value[flatIndex] ?? "";
-              });
-              const length = segment.cells.length;
-              const joined = lettersInSegment.join("");
-              const isFilled = lettersInSegment.length === length && lettersInSegment.every((char) => char && char.length === 1);
-              const clue = wordClueMap.value.get(joined) || "";
-              return {
-                index: segmentIndex,
-                flatIndices,
-                letters: lettersInSegment,
-                length,
-                word: joined,
-                clue,
-                isFilled,
-                direction: segment.direction,
-                number: segment.number,
-              };
-            });
-          });
+                                <!-- Across Clues -->
+                                <div
+                                    v-if="acrossClues.length"
+                                    class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-2"
+                                >
+                                    <h3
+                                        class="px-1 text-xs font-medium uppercase tracking-[0.25em] text-zinc-400"
+                                    >
+                                        Across
+                                    </h3>
+                                    <div
+                                        ref="acrossContainer"
+                                        class="grid max-h-32 gap-1 overflow-y-auto pr-1"
+                                    >
+                                        <button
+                                            v-for="segment in acrossClues"
+                                            :key="`across-${segment.index}`"
+                                            :data-segment-index="segment.index"
+                                            :data-direction="'across'"
+                                            @mouseenter="onClueHover(segment)"
+                                            @mouseleave="onClueLeave"
+                                            class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
+                                            :class="hoveredSegmentIndices.has(segment.index) ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                                        >
+                                            <span class="flex-1">
+                                                <span class="text-zinc-200"
+                                                    >{{ segment.number }}. {{
+                                                    segment.word || '—' }}</span
+                                                >
+                                                <span
+                                                    v-if="segment.clue"
+                                                    class="block text-[0.65rem] normal-case text-zinc-500"
+                                                    >{{ segment.clue }}</span
+                                                >
+                                            </span>
+                                            <span class="text-zinc-500"
+                                                >{{ segment.length }}L</span
+                                            >
+                                        </button>
+                                    </div>
+                                </div>
 
-          const segmentsByCell = computed(() => {
-            const map = new Map();
-            segmentDetails.value.forEach((segment) => {
-              segment.flatIndices.forEach((index) => {
-                const next = map.get(index) ?? [];
-                next.push(segment.index);
-                map.set(index, next);
-              });
-            });
-            return map;
-          });
+                                <!-- Down Clues -->
+                                <div
+                                    v-if="downClues.length"
+                                    class="grid gap-2 rounded border border-zinc-800 bg-zinc-950/80 p-2"
+                                >
+                                    <h3
+                                        class="px-1 text-xs font-medium uppercase tracking-[0.25em] text-zinc-400"
+                                    >
+                                        Down
+                                    </h3>
+                                    <div
+                                        ref="downContainer"
+                                        class="grid max-h-32 gap-1 overflow-y-auto pr-1"
+                                    >
+                                        <button
+                                            v-for="segment in downClues"
+                                            :key="`down-${segment.index}`"
+                                            :data-segment-index="segment.index"
+                                            :data-direction="'down'"
+                                            @mouseenter="onClueHover(segment)"
+                                            @mouseleave="onClueLeave"
+                                            class="flex items-start justify-between gap-3 rounded border border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs uppercase tracking-[0.18em] transition"
+                                            :class="hoveredSegmentIndices.has(segment.index) ? 'border-zinc-400 text-white' : 'hover:border-zinc-400'"
+                                        >
+                                            <span class="flex-1">
+                                                <span class="text-zinc-200"
+                                                    >{{ segment.number }}. {{
+                                                    segment.word || '—' }}</span
+                                                >
+                                                <span
+                                                    v-if="segment.clue"
+                                                    class="block text-[0.65rem] normal-case text-zinc-500"
+                                                    >{{ segment.clue }}</span
+                                                >
+                                            </span>
+                                            <span class="text-zinc-500"
+                                                >{{ segment.length }}L</span
+                                            >
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                @click="solve"
+                                :disabled="disableSolve"
+                                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] transition disabled:cursor-not-allowed disabled:opacity-50 hover:border-zinc-300 hover:text-white"
+                            >
+                                {{ solving ? 'Solving…' : 'Solve Crossword' }}
+                            </button>
+                            <button
+                                v-if="solutionLetters.length"
+                                @click="clearSolve"
+                                class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm uppercase tracking-[0.2em] transition hover:border-zinc-300 hover:text-white"
+                            >
+                                Clear Solve
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+        <script type="module">
+            import {
+                createApp,
+                ref,
+                reactive,
+                computed,
+                watch,
+                onMounted,
+                onBeforeUnmount,
+            } from "https://unpkg.com/vue@3/dist/vue.esm-browser.js";
+            import * as MiniZinc from "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.mjs";
 
-          const findSegmentIndicesByCell = (index) => segmentsByCell.value.get(index) ?? [];
-
-
-          watch(segmentDetails, (segments) => {
-            if (hoveredWordIndex.value >= segments.length) {
-              hoveredWordIndex.value = -1;
-            }
-          });
-          const acrossClues = computed(() => 
-            segmentDetails.value
-              .filter((segment) => segment.direction === 'across')
-              .sort((a, b) => a.number - b.number)
-          );
-          const downClues = computed(() => 
-            segmentDetails.value
-              .filter((segment) => segment.direction === 'down')
-              .sort((a, b) => a.number - b.number)
-          );
-          const solvedSegments = computed(() => segmentDetails.value.filter((segment) => segment.isFilled));
-          const clueHeadline = computed(() => {
-            const filled = solvedSegments.value.length;
-            const total = segmentDetails.value.length;
-            if (!total) return "";
-            return `${filled}/${total} filled`;
-          });
-          const hoveredSegmentCells = computed(() => {
-            const targetIndices = hoveredSegmentIndices.value;
-            if (!targetIndices?.size) return new Set();
-            const cells = new Set();
-            segmentDetails.value.forEach((segment) => {
-              if (!targetIndices.has(segment.index)) return;
-              segment.flatIndices.forEach((index) => cells.add(index));
-            });
-            return cells;
-          });
-          const acrossContainer = ref(null);
-          const downContainer = ref(null);
-          const gridContainer = ref(null);
-          const cellFontSize = ref(16);
-          
-          const exitGrid = () => {
-            hoveredCell.value = -1;
-          };
-          const updateHoveredSegments = (index) => {
-            if (index < 0) {
-              hoveredSegmentIndices.value = new Set();
-              return;
-            }
-            const allIndices = findSegmentIndicesByCell(index);
-            const acrossIndex = allIndices.find(idx => {
-              const segment = segmentDetails.value[idx];
-              return segment && segment.direction === 'across';
-            });
-            const downIndex = allIndices.find(idx => {
-              const segment = segmentDetails.value[idx];
-              return segment && segment.direction === 'down';
-            });
-            const next = new Set();
-            if (acrossIndex !== undefined) next.add(acrossIndex);
-            if (downIndex !== undefined) next.add(downIndex);
-            hoveredSegmentIndices.value = next;
-          };
-          
-          const onClueHover = (segment) => {
-            hoveredWordIndex.value = segment.index;
-            hoveredSegmentIndices.value = new Set([segment.index]);
-          };
-          
-          const onClueLeave = () => {
-            hoveredWordIndex.value = -1;
-            hoveredSegmentIndices.value = new Set();
-          };
-          
-          const scrollToClue = (segmentIndex) => {
-            const segment = segmentDetails.value.find(s => s.index === segmentIndex);
-            if (!segment) return;
-            
-            const container = segment.direction === 'across' ? acrossContainer.value : downContainer.value;
-            if (!container) return;
-            
-            const clueElement = container.querySelector(`[data-segment-index="${segmentIndex}"]`);
-            if (clueElement) {
-              clueElement.scrollIntoView({ behavior: 'smooth', block: 'center', container: 'nearest' });
-            }
-          };
-          const onCellPointerDown = (index) => {
-            startDrag(index);
-            enterCell(index);
-            const indices = findSegmentIndicesByCell(index);
-            hoveredWordIndex.value = indices[0] ?? -1;
-            updateHoveredSegments(index);
-            hoveredSegmentIndices.value.forEach(segmentIndex => scrollToClue(segmentIndex));
-          };
-          const onCellPointerEnter = (index) => {
-            if (dragging.active) {
-              dragCell(index);
-            }
-            enterCell(index);
-            const indices = findSegmentIndicesByCell(index);
-            const newHoveredIndex = indices[0] ?? hoveredWordIndex.value;
-            if (newHoveredIndex !== hoveredWordIndex.value) {
-              hoveredWordIndex.value = newHoveredIndex;
-            }
-            updateHoveredSegments(index);
-            hoveredSegmentIndices.value.forEach(segmentIndex => scrollToClue(segmentIndex));
-          };
-          const onCellPointerLeave = (index) => {
-            leaveCell(index);
-            if (hoveredCell.value < 0) hoveredWordIndex.value = -1;
-            if (hoveredCell.value < 0) updateHoveredSegments(-1);
-          };
-          const solve = async () => {
-            if (disableSolve.value) return;
-            solving.value = true;
-            solveStatus.value = "Preparing model…";
-            solutionLetters.value = [];
-            solutionWords.value = [];
-            lastStatus.value = "";
-            hoveredWordIndex.value = -1;
-            try {
-              const prefillArray = Array.from({ length: rows.value * cols.value }, (_, index) => userPrefills.value.get(index) ?? "");
-              const { content, metadata } = buildPuzzle(grid.value, prefillArray);
-              if (!metadata.segments.length) {
-                throw new Error("No viable word segments. Add more open cells.");
-              }
-              const requiredLengths = Array.from(new Set(metadata.segments.map((segment) => segment.length)));
-              for (const length of requiredLengths) {
-                if (!selectedLengths.value.has(length)) {
-                  throw new Error(`Enable length ${length} to solve this grid.`);
+            const letters = "abcdefghijklmnopqrstuvwxyz";
+            const normalizeClue = (value) =>
+                value
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+            const createMatrix = (r, c) => {
+                // For default 8x8 grid, create edge blocks
+                if (r === 8 && c === 8) {
+                    return Array.from({ length: r }, (_, rowIndex) =>
+                        Array.from({ length: c }, (_, colIndex) => {
+                            // Block edges (first/last row or first/last column)
+                            if (rowIndex === 0 || rowIndex === r - 1 || colIndex === 0 || colIndex === c - 1) {
+                                return "#";
+                            }
+                            return "_";
+                        })
+                    );
                 }
-                const meta = lengthMetadata.value.find((m) => m.length === length);
-                if (!meta || meta.count === 0) {
-                  throw new Error(`No words available for length ${length}.`);
+                // For other sizes, create empty matrix
+                return Array.from({ length: r }, () =>
+                    Array.from({ length: c }, () => "_")
+                );
+            };
+            const cloneMatrix = (matrix) => matrix.map((row) => row.slice());
+            const buildProblemMatrix = (matrix) => {
+                let id = 1;
+                const mapped = matrix.map((row) =>
+                    row.map((cell) => {
+                        if (cell === "#") return 0;
+                        const value = id;
+                        id += 1;
+                        return value;
+                    }),
+                );
+                return { mapped, count: id - 1 };
+            };
+            const collectSegments = (grid, rows, cols) => {
+                const segments = [];
+                const extract = (sourceRows, sourceCols, mapper) => {
+                    for (let r = 0; r < sourceRows; r += 1) {
+                        const line = [];
+                        for (let c = 0; c < sourceCols; c += 1) {
+                            const value = mapper(r, c);
+                            if (value === 0) {
+                                if (line.length > 1) segments.push([...line]);
+                                line.length = 0;
+                            } else {
+                                line.push(value);
+                            }
+                        }
+                        if (line.length > 1) segments.push([...line]);
+                    }
+                };
+                extract(rows, cols, (r, c) => grid[r][c]);
+                extract(cols, rows, (r, c) => grid[c][r]);
+                return segments;
+            };
+            const collectSegmentsWithDirection = (grid, rows, cols) => {
+                const segments = [];
+                const numberedCells = new Map();
+                let clueNumber = 1;
+
+                // First pass: assign numbers to cells that start across or down words
+                for (let r = 0; r < rows; r += 1) {
+                    for (let c = 0; c < cols; c += 1) {
+                        if (grid[r][c] === 0) continue;
+
+                        const startsAcross =
+                            (c === 0 || grid[r][c - 1] === 0) &&
+                            c + 1 < cols &&
+                            grid[r][c + 1] !== 0;
+                        const startsDown =
+                            (r === 0 || grid[r - 1][c] === 0) &&
+                            r + 1 < rows &&
+                            grid[r + 1][c] !== 0;
+
+                        if (startsAcross || startsDown) {
+                            numberedCells.set(`${r},${c}`, clueNumber++);
+                        }
+                    }
                 }
-              }
-              solveStatus.value = "Loading words…";
-              const activeWords = await new Promise((resolve, reject) => {
-                const requestId = Date.now();
-                const timeout = setTimeout(() => {
-                  pendingWordRequests.value.delete(requestId);
-                  reject(new Error("Word loading timed out"));
-                }, 30000);
-                pendingWordRequests.value.set(requestId, { 
-                  resolve: (data) => {
-                    clearTimeout(timeout);
-                    resolve(data);
-                  }, 
-                  reject: (error) => {
-                    clearTimeout(timeout);
-                    reject(error);
-                  }
+
+                // Extract across segments
+                for (let r = 0; r < rows; r += 1) {
+                    const line = [];
+                    let startCol = -1;
+                    for (let c = 0; c < cols; c += 1) {
+                        const value = grid[r][c];
+                        if (value === 0) {
+                            if (line.length > 1) {
+                                const number =
+                                    numberedCells.get(`${r},${startCol}`) ?? 0;
+                                segments.push({
+                                    cells: [...line],
+                                    direction: "across",
+                                    number,
+                                });
+                            }
+                            line.length = 0;
+                            startCol = -1;
+                        } else {
+                            if (line.length === 0) startCol = c;
+                            line.push(value);
+                        }
+                    }
+                    if (line.length > 1) {
+                        const number =
+                            numberedCells.get(`${r},${startCol}`) ?? 0;
+                        segments.push({
+                            cells: [...line],
+                            direction: "across",
+                            number,
+                        });
+                    }
+                }
+
+                // Extract down segments
+                for (let c = 0; c < cols; c += 1) {
+                    const line = [];
+                    let startRow = -1;
+                    for (let r = 0; r < rows; r += 1) {
+                        const value = grid[r][c];
+                        if (value === 0) {
+                            if (line.length > 1) {
+                                const number =
+                                    numberedCells.get(`${startRow},${c}`) ?? 0;
+                                segments.push({
+                                    cells: [...line],
+                                    direction: "down",
+                                    number,
+                                });
+                            }
+                            line.length = 0;
+                            startRow = -1;
+                        } else {
+                            if (line.length === 0) startRow = r;
+                            line.push(value);
+                        }
+                    }
+                    if (line.length > 1) {
+                        const number =
+                            numberedCells.get(`${startRow},${c}`) ?? 0;
+                        segments.push({
+                            cells: [...line],
+                            direction: "down",
+                            number,
+                        });
+                    }
+                }
+
+                return segments;
+            };
+            const gridPresentation = (matrix) =>
+                matrix
+                    .map(
+                        (row) =>
+                            `%   ${row.map((cell) => (cell === "#" ? "#" : "_")).join(" ")}`,
+                    )
+                    .join("\n");
+            const buildPuzzle = (matrix, prefills = []) => {
+                const rows = matrix.length;
+                const cols = matrix[0]?.length ?? 0;
+                const { mapped, count } = buildProblemMatrix(matrix);
+                const segments = collectSegments(mapped, rows, cols);
+                const maxSegmentLength = segments.reduce(
+                    (acc, segment) => Math.max(acc, segment.length),
+                    1,
+                );
+                const segmentLines = segments.map((segment) => {
+                    const padded = segment.concat(
+                        Array.from(
+                            {
+                                length: Math.max(
+                                    maxSegmentLength - segment.length,
+                                    0,
+                                ),
+                            },
+                            () => 0,
+                        ),
+                    );
+                    return `${padded.join(", ")},`;
                 });
-                worker.value.postMessage({
-                  type: "getWords",
-                  payload: { lengths: requiredLengths, requestId },
-                });
-              });
-            if (!activeWords[1]) {
-              const singles = letters.split("").map((letter) => ({ word: letter, clues: [] }));
-              activeWords[1] = singles;
-            }
-            const wordData = buildWordData(activeWords);
-            const model = new MiniZinc.Model();
-            model.addFile("crosswords.mzn", crosswordsModel.value, false);
-            model.addFile("all_words.dzn", wordData, false);
-            model.addFile("main.mzn", content);
-            const solveHandle = model.solve({ options: { solver: "gecode" } });
-            solveStatus.value = "Running solver…";
-            const result = await solveHandle;
-            lastStatus.value = result.status ?? "UNKNOWN";
-            if (!result.solution || !result.solution.output || !result.solution.output.json) {
-              solveStatus.value = "Solver returned without a solution.";
-              return;
-            }
-            const assignment = result.solution.output.json.L ?? [];
-            const mapped = metadata.mapped.flat().map((cell, flatIndex) => {
-              if (cell === 0) return "";
-              const assigned = assignment[cell] ?? assignment[cell - 1];
-              const letter = typeof assigned === "number" ? letters[assigned - 1] ?? "" : "";
-              if (userPrefills.value.has(flatIndex)) return userPrefills.value.get(flatIndex);
-              return letter;
-            });
-            solutionLetters.value = mapped;
-            solveStatus.value = "Solved.";
-            const solvedSet = new Set();
-            metadata.mapped.forEach((row, rowIndex) => {
-              row.forEach((cellId, colIndex) => {
-                if (!cellId) return;
-                const flatIndex = rowIndex * metadata.cols + colIndex;
-                if (userPrefills.value.has(flatIndex)) return;
-                const value = assignment[cellId] ?? assignment[cellId - 1];
-                if (typeof value === "number" && letters[value - 1]) {
-                  solvedSet.add(flatIndex);
+                const problemLines = mapped.map((row) => `${row.join(", ")},`);
+                const tables = segments.map(
+                    (segment) =>
+                        `table([${segment.map((value) => `L[${value}]`).join(", ")}], words${segment.length})`,
+                );
+                const tableBlock = tables.length
+                    ? tables.join(" \n/\\ ")
+                    : "true";
+                const assignments = [];
+                if (Array.isArray(prefills) && prefills.length) {
+                    for (let index = 0; index < prefills.length; index += 1) {
+                        const letter = prefills[index];
+                        if (!letter) continue;
+                        const row = Math.floor(index / cols);
+                        const col = index % cols;
+                        const cellId = mapped[row]?.[col] ?? 0;
+                        if (!cellId) continue;
+                        const letterIndex = letters.indexOf(letter);
+                        if (letterIndex === -1) continue;
+                        assignments.push(`L[${cellId}] = ${letterIndex + 1}`);
+                    }
                 }
-              });
+                const constraintParts = [];
+                if (tableBlock !== "true") constraintParts.push(tableBlock);
+                if (assignments.length) constraintParts.push(...assignments);
+                const constraintBlock = constraintParts.length
+                    ? constraintParts.join(" \n/\\ ")
+                    : "true";
+                const content = [
+                    "%",
+                    "% Generated crossword",
+                    "%",
+                    `% (generated ${new Date().toISOString()} by browser grid)`,
+                    "%",
+                    "%",
+                    "% Problem to solve:",
+                    "%",
+                    gridPresentation(matrix),
+                    "",
+                    'include "crosswords.mzn";',
+                    "",
+                    'problem_name = "crossword";',
+                    "",
+                    `% number of letters to assign`,
+                    `N = ${count};`,
+                    "",
+                    "% distinct words",
+                    "require_distinct_words = 1;",
+                    "",
+                    "constraint",
+                    `  ${constraintBlock}`,
+                    ";",
+                    "",
+                    "% The segments (words)",
+                    "% (0 for fill outs)",
+                    `int: max_length = ${maxSegmentLength};`,
+                    `int: num_segments = ${segments.length};`,
+                    "array[1..num_segments, 1..max_length] of int: segments = array2d(1..num_segments, 1..max_length,",
+                    "[",
+                    segmentLines.join("\n"),
+                    "]);",
+                    "",
+                    "",
+                    "% Problem where each cell is assigned a unique index.",
+                    "% (0 means blocked cell)",
+                    `int: rows = ${rows};`,
+                    `int: cols = ${cols};`,
+                    "array[1..rows, 1..cols] of int: problem = array2d(1..rows, 1..cols,",
+                    "[",
+                    problemLines.join("\n"),
+                    "]);",
+                    "",
+                ].join("\n");
+                return { content, metadata: { mapped, segments, rows, cols } };
+            };
+            const buildWordData = (entriesByLength) => {
+                const lengths = Object.keys(entriesByLength)
+                    .map((value) => Number(value))
+                    .sort((a, b) => a - b);
+                const blocks = lengths
+                    .filter((length) => entriesByLength[length]?.length)
+                    .map((length) => {
+                        const entries = entriesByLength[length];
+                        const rows = entries
+                            .map(({ word }) =>
+                                word
+                                    .split("")
+                                    .map(
+                                        (letter) => letters.indexOf(letter) + 1,
+                                    ),
+                            )
+                            .map((codes) => `${codes.join(", ")},`)
+                            .join("\n");
+                        return [
+                            `int: num_words${length} = ${entries.length};`,
+                            `array[1..num_words${length}, 1..${length}] of int: words${length} = array2d(1..num_words${length}, 1..${length},`,
+                            "[",
+                            rows,
+                            "]);",
+                            "",
+                        ].join("\n");
+                    });
+                return blocks.join("\n");
+            };
+            const deriveSlots = (matrix) => {
+                const rows = matrix.length;
+                const cols = matrix[0]?.length ?? 0;
+                const { mapped } = buildProblemMatrix(matrix);
+                const segments = collectSegments(mapped, rows, cols);
+                const summary = segments.reduce(
+                    (acc, segment) => {
+                        const len = segment.length;
+                        acc[len] = (acc[len] ?? 0) + 1;
+                        acc.total += 1;
+                        return acc;
+                    },
+                    { total: 0 },
+                );
+                return summary;
+            };
+            const app = createApp({
+                setup() {
+                    const rows = ref(8);
+                    const cols = ref(8);
+                    const grid = ref(createMatrix(rows.value, cols.value));
+                    const dragging = reactive({
+                        active: false,
+                        next: "#",
+                        startIndex: -1,
+                    });
+                    const ready = ref(false);
+                    const loadError = ref("");
+                    const solving = ref(false);
+                    const solveStatus = ref("");
+                    const lastStatus = ref("");
+                    const solutionLetters = ref([]);
+                    const solutionWords = ref([]);
+                    const solvedCells = ref(new Set());
+                    const userPrefills = ref(new Map());
+                    const worker = ref(null);
+                    const pendingRequest = ref(0);
+                    const lengthMetadata = ref([]);
+                    const selectedLengths = ref(new Set());
+                    const pendingWordRequests = ref(new Map());
+                    const wordClueMap = ref(new Map());
+                    const crosswordsModel = ref("");
+                    const hoveredCell = ref(-1);
+                    const hoveredWordIndex = ref(-1);
+                    const hoveredSegmentIndices = ref(new Set());
+                    const minClueCount = ref(1);
+                    const normalizedMinClue = computed(() => {
+                        const value = Number(minClueCount.value);
+                        if (!Number.isFinite(value) || value < 1) return 1;
+                        return Math.floor(value);
+                    });
+                    watch(normalizedMinClue, (value) => {
+                        if (minClueCount.value !== value)
+                            minClueCount.value = value;
+                        requestFilter(value);
+                    });
+                    const slotSummary = computed(() =>
+                        deriveSlots(
+                            grid.value || createMatrix(rows.value, cols.value),
+                        ),
+                    );
+                    const flatGrid = computed(() => (grid.value || []).flat());
+                    const openCellCount = computed(
+                        () =>
+                            flatGrid.value.filter((cell) => cell !== "#")
+                                .length,
+                    );
+                    const blockedCellCount = computed(
+                        () =>
+                            flatGrid.value.filter((cell) => cell === "#")
+                                .length,
+                    );
+                    const lengthOptions = computed(() =>
+                        (lengthMetadata.value ?? []).map((meta) => ({
+                            length: meta.length,
+                            selected: selectedLengths.value.has(meta.length),
+                            count: meta.count,
+                            label: `${meta.length}L`,
+                        })),
+                    );
+                    const activeWordCount = computed(() =>
+                        Array.from(selectedLengths.value || []).reduce(
+                            (acc, length) => {
+                                const meta = lengthMetadata.value.find(
+                                    (m) => m.length === length,
+                                );
+                                return acc + (meta?.count ?? 0);
+                            },
+                            0,
+                        ),
+                    );
+                    const disableSolve = computed(
+                        () =>
+                            !ready.value ||
+                            solving.value ||
+                            loadError.value.length > 0 ||
+                            !slotSummary.value.total,
+                    );
+                    const applyCell = (index, value) => {
+                        const next = cloneMatrix(grid.value);
+                        const r = Math.floor(index / cols.value);
+                        const c = index % cols.value;
+                        if (!next[r]) return;
+                        next[r][c] = value;
+                        grid.value = next;
+                        solutionLetters.value = [];
+                        solutionWords.value = [];
+                        solvedCells.value = new Set();
+                        wordClueMap.value = new Map();
+                    };
+                    const startDrag = (index) => {
+                        const current = flatGrid.value[index] ?? "_";
+                        const next = current === "#" ? "_" : "#";
+                        dragging.active = true;
+                        dragging.next = next;
+                        dragging.startIndex = index;
+                        applyCell(index, next);
+                        userPrefills.value.delete(index);
+                    };
+                    const dragCell = (index) => {
+                        if (!dragging.active) return;
+                        applyCell(index, dragging.next);
+                        userPrefills.value.delete(index);
+                    };
+                    const endDrag = () => {
+                        dragging.active = false;
+                        dragging.startIndex = -1;
+                    };
+                    const cellClass = (index) => {
+                        const current = flatGrid.value[index] ?? "_";
+                        const prefilled = userPrefills.value.has(index);
+                        const solved = solvedCells.value.has(index);
+                        const hovered =
+                            hoveredCell.value === index ||
+                            hoveredSegmentCells.value.has(index);
+                        const letter = solutionLetters.value[index] ?? "";
+                        if (current === "#")
+                            return "bg-zinc-900 text-zinc-600 border border-zinc-800 hover:border-zinc-700";
+                        if (prefilled)
+                            return hovered
+                                ? "bg-zinc-950 text-white border border-zinc-400"
+                                : "bg-zinc-950 text-zinc-100 border border-zinc-600 hover:border-zinc-400";
+                        if (solved && letter)
+                            return hovered
+                                ? "bg-green-900/30 text-zinc-100 border border-green-400"
+                                : "bg-green-900/20 text-zinc-100 border border-green-600/40 hover:border-green-400";
+                        if (hovered)
+                            return "bg-zinc-950 text-zinc-100 border border-zinc-400";
+                        if (letter)
+                            return "bg-zinc-950 text-zinc-100 border border-zinc-700 hover:border-zinc-400";
+                        return "bg-zinc-950 text-zinc-300 border border-zinc-800 hover:border-zinc-500";
+                    };
+                    const cellLabel = (index) => {
+                        const current = flatGrid.value[index] ?? "_";
+                        if (current === "#") return "";
+                        if (userPrefills.value.has(index))
+                            return userPrefills.value.get(index).toUpperCase();
+                        const letter = solutionLetters.value[index];
+                        return letter ? letter.toUpperCase() : "";
+                    };
+                    const enterCell = (index) => {
+                        hoveredCell.value = index;
+                    };
+                    const leaveCell = (index) => {
+                        if (hoveredCell.value === index) hoveredCell.value = -1;
+                    };
+                    const resizeGrid = (nextRows, nextCols) => {
+                        const next = createMatrix(nextRows, nextCols);
+                        // Only copy existing cells if not resizing to default 8x8 with edge blocks
+                        if (!(nextRows === 8 && nextCols === 8)) {
+                            for (
+                                let r = 0;
+                                r < Math.min(nextRows, grid.value.length);
+                                r += 1
+                            ) {
+                                for (
+                                    let c = 0;
+                                    c < Math.min(nextCols, grid.value[0].length);
+                                    c += 1
+                                ) {
+                                    next[r][c] = grid.value[r][c];
+                                }
+                            }
+                        }
+                        grid.value = next;
+                        solutionLetters.value = [];
+                        solutionWords.value = [];
+                        userPrefills.value.clear();
+                        solvedCells.value = new Set();
+                        wordClueMap.value = new Map();
+                    };
+                    watch(
+                        [rows, cols],
+                        ([nextRows, nextCols], [prevRows, prevCols]) => {
+                            if (
+                                nextRows !== prevRows ||
+                                nextCols !== prevCols
+                            ) {
+                                resizeGrid(nextRows, nextCols);
+                            }
+                        },
+                    );
+                    const toggleLength = (length) => {
+                        const next = new Set(selectedLengths.value);
+                        if (next.has(length)) {
+                            next.delete(length);
+                        } else {
+                            next.add(length);
+                        }
+                        selectedLengths.value = next;
+                    };
+                    const resetGrid = () => {
+                        grid.value = createMatrix(rows.value, cols.value);
+                        solutionLetters.value = [];
+                        solutionWords.value = [];
+                        userPrefills.value.clear();
+                        solvedCells.value = new Set();
+                        solveStatus.value = "";
+                        lastStatus.value = "";
+                        hoveredWordIndex.value = -1;
+                        wordClueMap.value = new Map();
+                    };
+                    const fillEntireGrid = (mode) => {
+                        const next = createMatrix(rows.value, cols.value);
+                        for (let r = 0; r < rows.value; r += 1) {
+                            for (let c = 0; c < cols.value; c += 1) {
+                                next[r][c] = mode === "blocked" ? "#" : "_";
+                            }
+                        }
+                        grid.value = next;
+                        userPrefills.value.clear();
+                        solutionLetters.value = [];
+                        solutionWords.value = [];
+                        solvedCells.value = new Set();
+                        solveStatus.value = "";
+                        lastStatus.value = "";
+                        hoveredWordIndex.value = -1;
+                        wordClueMap.value = new Map();
+                    };
+                    const clearSolve = () => {
+                        solutionLetters.value = [];
+                        solutionWords.value = [];
+                        solvedCells.value = new Set();
+                        solveStatus.value = "";
+                        lastStatus.value = "";
+                        hoveredWordIndex.value = -1;
+                        wordClueMap.value = new Map();
+                    };
+                    const applyPrefill = (index, letter) => {
+                        const current = flatGrid.value[index] ?? "#";
+                        if (current === "#") return;
+                        if (letter) {
+                            userPrefills.value.set(index, letter);
+                        } else {
+                            userPrefills.value.delete(index);
+                        }
+                    };
+                    const handleKey = (event) => {
+                        if (hoveredCell.value < 0) return;
+                        const key = event.key.toLowerCase();
+                        if (key.length === 1 && letters.includes(key)) {
+                            applyPrefill(hoveredCell.value, key);
+                            solutionLetters.value = [];
+                            solutionWords.value = [];
+                            solvedCells.value = new Set();
+                            wordClueMap.value = new Map();
+                        }
+                        if (
+                            event.key === "Backspace" ||
+                            event.key === "Delete"
+                        ) {
+                            applyPrefill(hoveredCell.value, "");
+                            solutionLetters.value = [];
+                            solutionWords.value = [];
+                            solvedCells.value = new Set();
+                            wordClueMap.value = new Map();
+                        }
+                    };
+                    const segmentDetails = computed(() => {
+                        if (!solutionLetters.value.length) return [];
+                        const activeGrid = grid.value;
+                        if (!activeGrid.length) return [];
+                        const { mapped } = buildProblemMatrix(activeGrid);
+                        const segments = collectSegmentsWithDirection(
+                            mapped,
+                            rows.value,
+                            cols.value,
+                        );
+                        const idToIndex = new Map();
+                        mapped.forEach((row, rowIndex) => {
+                            row.forEach((cellId, colIndex) => {
+                                if (!cellId) return;
+                                idToIndex.set(
+                                    cellId,
+                                    rowIndex * cols.value + colIndex,
+                                );
+                            });
+                        });
+                        return segments.map((segment, segmentIndex) => {
+                            const flatIndices = segment.cells
+                                .map((id) => idToIndex.get(id))
+                                .filter((value) => typeof value === "number");
+                            const lettersInSegment = flatIndices.map(
+                                (flatIndex) => {
+                                    if (userPrefills.value.has(flatIndex))
+                                        return userPrefills.value.get(
+                                            flatIndex,
+                                        );
+                                    return (
+                                        solutionLetters.value[flatIndex] ?? ""
+                                    );
+                                },
+                            );
+                            const length = segment.cells.length;
+                            const joined = lettersInSegment.join("");
+                            const isFilled =
+                                lettersInSegment.length === length &&
+                                lettersInSegment.every(
+                                    (char) => char && char.length === 1,
+                                );
+                            const clue = wordClueMap.value.get(joined) || "";
+                            return {
+                                index: segmentIndex,
+                                flatIndices,
+                                letters: lettersInSegment,
+                                length,
+                                word: joined,
+                                clue,
+                                isFilled,
+                                direction: segment.direction,
+                                number: segment.number,
+                            };
+                        });
+                    });
+
+                    const segmentsByCell = computed(() => {
+                        const map = new Map();
+                        segmentDetails.value.forEach((segment) => {
+                            segment.flatIndices.forEach((index) => {
+                                const next = map.get(index) ?? [];
+                                next.push(segment.index);
+                                map.set(index, next);
+                            });
+                        });
+                        return map;
+                    });
+
+                    const findSegmentIndicesByCell = (index) =>
+                        segmentsByCell.value.get(index) ?? [];
+
+                    watch(segmentDetails, (segments) => {
+                        if (hoveredWordIndex.value >= segments.length) {
+                            hoveredWordIndex.value = -1;
+                        }
+                    });
+                    const acrossClues = computed(() =>
+                        segmentDetails.value
+                            .filter((segment) => segment.direction === "across")
+                            .sort((a, b) => a.number - b.number),
+                    );
+                    const downClues = computed(() =>
+                        segmentDetails.value
+                            .filter((segment) => segment.direction === "down")
+                            .sort((a, b) => a.number - b.number),
+                    );
+                    const solvedSegments = computed(() =>
+                        segmentDetails.value.filter(
+                            (segment) => segment.isFilled,
+                        ),
+                    );
+                    const clueHeadline = computed(() => {
+                        const filled = solvedSegments.value.length;
+                        const total = segmentDetails.value.length;
+                        if (!total) return "";
+                        return `${filled}/${total} filled`;
+                    });
+                    const hoveredSegmentCells = computed(() => {
+                        const targetIndices = hoveredSegmentIndices.value;
+                        if (!targetIndices?.size) return new Set();
+                        const cells = new Set();
+                        segmentDetails.value.forEach((segment) => {
+                            if (!targetIndices.has(segment.index)) return;
+                            segment.flatIndices.forEach((index) =>
+                                cells.add(index),
+                            );
+                        });
+                        return cells;
+                    });
+                    const acrossContainer = ref(null);
+                    const downContainer = ref(null);
+                    const gridContainer = ref(null);
+                    const cellFontSize = ref(16);
+
+                    const exitGrid = () => {
+                        hoveredCell.value = -1;
+                    };
+                    const updateHoveredSegments = (index) => {
+                        if (index < 0) {
+                            hoveredSegmentIndices.value = new Set();
+                            return;
+                        }
+                        const allIndices = findSegmentIndicesByCell(index);
+                        const acrossIndex = allIndices.find((idx) => {
+                            const segment = segmentDetails.value[idx];
+                            return segment && segment.direction === "across";
+                        });
+                        const downIndex = allIndices.find((idx) => {
+                            const segment = segmentDetails.value[idx];
+                            return segment && segment.direction === "down";
+                        });
+                        const next = new Set();
+                        if (acrossIndex !== undefined) next.add(acrossIndex);
+                        if (downIndex !== undefined) next.add(downIndex);
+                        hoveredSegmentIndices.value = next;
+                    };
+
+                    const onClueHover = (segment) => {
+                        hoveredWordIndex.value = segment.index;
+                        hoveredSegmentIndices.value = new Set([segment.index]);
+                    };
+
+                    const onClueLeave = () => {
+                        hoveredWordIndex.value = -1;
+                        hoveredSegmentIndices.value = new Set();
+                    };
+
+                    const scrollToClue = (segmentIndex) => {
+                        const segment = segmentDetails.value.find(
+                            (s) => s.index === segmentIndex,
+                        );
+                        if (!segment) return;
+
+                        const container =
+                            segment.direction === "across"
+                                ? acrossContainer.value
+                                : downContainer.value;
+                        if (!container) return;
+
+                        const clueElement = container.querySelector(
+                            `[data-segment-index="${segmentIndex}"]`,
+                        );
+                        if (clueElement) {
+                            clueElement.scrollIntoView({
+                                behavior: "smooth",
+                                block: "center",
+                                container: "nearest",
+                            });
+                        }
+                    };
+                    const onCellPointerDown = (index) => {
+                        startDrag(index);
+                        enterCell(index);
+                        const indices = findSegmentIndicesByCell(index);
+                        hoveredWordIndex.value = indices[0] ?? -1;
+                        updateHoveredSegments(index);
+                        hoveredSegmentIndices.value.forEach((segmentIndex) =>
+                            scrollToClue(segmentIndex),
+                        );
+                    };
+                    const onCellPointerEnter = (index) => {
+                        if (dragging.active) {
+                            dragCell(index);
+                        }
+                        enterCell(index);
+                        const indices = findSegmentIndicesByCell(index);
+                        const newHoveredIndex =
+                            indices[0] ?? hoveredWordIndex.value;
+                        if (newHoveredIndex !== hoveredWordIndex.value) {
+                            hoveredWordIndex.value = newHoveredIndex;
+                        }
+                        updateHoveredSegments(index);
+                        hoveredSegmentIndices.value.forEach((segmentIndex) =>
+                            scrollToClue(segmentIndex),
+                        );
+                    };
+                    const onCellPointerLeave = (index) => {
+                        leaveCell(index);
+                        if (hoveredCell.value < 0) hoveredWordIndex.value = -1;
+                        if (hoveredCell.value < 0) updateHoveredSegments(-1);
+                    };
+                    const solve = async () => {
+                        if (disableSolve.value) return;
+                        solving.value = true;
+                        solveStatus.value = "Preparing model…";
+                        solutionLetters.value = [];
+                        solutionWords.value = [];
+                        lastStatus.value = "";
+                        hoveredWordIndex.value = -1;
+                        try {
+                            const prefillArray = Array.from(
+                                { length: rows.value * cols.value },
+                                (_, index) =>
+                                    userPrefills.value.get(index) ?? "",
+                            );
+                            const { content, metadata } = buildPuzzle(
+                                grid.value,
+                                prefillArray,
+                            );
+                            if (!metadata.segments.length) {
+                                throw new Error(
+                                    "No viable word segments. Add more open cells.",
+                                );
+                            }
+                            const requiredLengths = Array.from(
+                                new Set(
+                                    metadata.segments.map(
+                                        (segment) => segment.length,
+                                    ),
+                                ),
+                            );
+                            for (const length of requiredLengths) {
+                                if (!selectedLengths.value.has(length)) {
+                                    throw new Error(
+                                        `Enable length ${length} to solve this grid.`,
+                                    );
+                                }
+                                const meta = lengthMetadata.value.find(
+                                    (m) => m.length === length,
+                                );
+                                if (!meta || meta.count === 0) {
+                                    throw new Error(
+                                        `No words available for length ${length}.`,
+                                    );
+                                }
+                            }
+                            solveStatus.value = "Loading words…";
+                            const activeWords = await new Promise(
+                                (resolve, reject) => {
+                                    const requestId = Date.now();
+                                    const timeout = setTimeout(() => {
+                                        pendingWordRequests.value.delete(
+                                            requestId,
+                                        );
+                                        reject(
+                                            new Error("Word loading timed out"),
+                                        );
+                                    }, 30000);
+                                    pendingWordRequests.value.set(requestId, {
+                                        resolve: (data) => {
+                                            clearTimeout(timeout);
+                                            resolve(data);
+                                        },
+                                        reject: (error) => {
+                                            clearTimeout(timeout);
+                                            reject(error);
+                                        },
+                                    });
+                                    worker.value.postMessage({
+                                        type: "getWords",
+                                        payload: {
+                                            lengths: requiredLengths,
+                                            requestId,
+                                        },
+                                    });
+                                },
+                            );
+                            if (!activeWords[1]) {
+                                const singles = letters
+                                    .split("")
+                                    .map((letter) => ({
+                                        word: letter,
+                                        clues: [],
+                                    }));
+                                activeWords[1] = singles;
+                            }
+                            const wordData = buildWordData(activeWords);
+                            const model = new MiniZinc.Model();
+                            model.addFile(
+                                "crosswords.mzn",
+                                crosswordsModel.value,
+                                false,
+                            );
+                            model.addFile("all_words.dzn", wordData, false);
+                            model.addFile("main.mzn", content);
+                            const solveHandle = model.solve({
+                                options: { solver: "gecode" },
+                            });
+                            solveStatus.value = "Running solver…";
+                            const result = await solveHandle;
+                            lastStatus.value = result.status ?? "UNKNOWN";
+                            if (
+                                !result.solution ||
+                                !result.solution.output ||
+                                !result.solution.output.json
+                            ) {
+                                solveStatus.value =
+                                    "Solver returned without a solution.";
+                                return;
+                            }
+                            const assignment =
+                                result.solution.output.json.L ?? [];
+                            const mapped = metadata.mapped
+                                .flat()
+                                .map((cell, flatIndex) => {
+                                    if (cell === 0) return "";
+                                    const assigned =
+                                        assignment[cell] ??
+                                        assignment[cell - 1];
+                                    const letter =
+                                        typeof assigned === "number"
+                                            ? (letters[assigned - 1] ?? "")
+                                            : "";
+                                    if (userPrefills.value.has(flatIndex))
+                                        return userPrefills.value.get(
+                                            flatIndex,
+                                        );
+                                    return letter;
+                                });
+                            solutionLetters.value = mapped;
+                            solveStatus.value = "Solved.";
+                            const solvedSet = new Set();
+                            metadata.mapped.forEach((row, rowIndex) => {
+                                row.forEach((cellId, colIndex) => {
+                                    if (!cellId) return;
+                                    const flatIndex =
+                                        rowIndex * metadata.cols + colIndex;
+                                    if (userPrefills.value.has(flatIndex))
+                                        return;
+                                    const value =
+                                        assignment[cellId] ??
+                                        assignment[cellId - 1];
+                                    if (
+                                        typeof value === "number" &&
+                                        letters[value - 1]
+                                    ) {
+                                        solvedSet.add(flatIndex);
+                                    }
+                                });
+                            });
+                            solvedCells.value = solvedSet;
+                            const words = metadata.segments.map((segment) =>
+                                segment
+                                    .map((id) => {
+                                        const index =
+                                            assignment[id] ??
+                                            assignment[id - 1];
+                                        return typeof index === "number"
+                                            ? (letters[index - 1] ?? "")
+                                            : "";
+                                    })
+                                    .join(""),
+                            );
+                            solutionWords.value = words.filter(
+                                (word) => word.length > 1,
+                            );
+                        } catch (error) {
+                            solveStatus.value = error.message ?? String(error);
+                        } finally {
+                            solving.value = false;
+                        }
+                    };
+                    const initWorker = () => {
+                        const instance = new Worker(
+                            new URL("clueWorker.js", import.meta.url),
+                            { type: "module" },
+                        );
+                        worker.value = instance;
+                        instance.onerror = (error) => {
+                            loadError.value =
+                                "Worker failed to load: " +
+                                (error.message || String(error));
+                        };
+                        instance.onmessage = (event) => {
+                            const { type, payload } = event.data ?? {};
+                            if (type === "initialized") {
+                                lengthMetadata.value =
+                                    payload.lengthMetadata ?? [];
+                                selectedLengths.value = new Set(
+                                    lengthMetadata.value.map(
+                                        (meta) => meta.length,
+                                    ),
+                                );
+                                ready.value = true;
+                            }
+                            if (type === "filtered") {
+                                if (payload.requestId !== pendingRequest.value)
+                                    return;
+                                lengthMetadata.value =
+                                    payload.lengthMetadata ?? [];
+                            }
+                            if (type === "wordsReady") {
+                                const request = pendingWordRequests.value.get(
+                                    payload.requestId,
+                                );
+                                if (request) {
+                                    if (payload.clueMap) {
+                                        wordClueMap.value = new Map(
+                                            Object.entries(payload.clueMap),
+                                        );
+                                    }
+                                    request.resolve(payload.words);
+                                    pendingWordRequests.value.delete(
+                                        payload.requestId,
+                                    );
+                                }
+                            }
+                            if (type === "error") {
+                                loadError.value =
+                                    payload.message ?? "Worker error";
+                            }
+                        };
+                        instance.postMessage({ type: "init" });
+                    };
+
+                    const requestFilter = (minClue) => {
+                        if (!worker.value) return;
+                        const requestId = Date.now();
+                        pendingRequest.value = requestId;
+                        worker.value.postMessage({
+                            type: "filter",
+                            payload: { minClueCount: minClue, requestId },
+                        });
+                    };
+
+                    const updateCellFontSize = () => {
+                        if (!gridContainer.value) return;
+                        const containerWidth = gridContainer.value.offsetWidth;
+                        const padding = 16;
+                        const gap = 1 * (cols.value - 1);
+                        const availableWidth = containerWidth - padding - gap;
+                        const squareWidth = availableWidth / cols.value;
+                        cellFontSize.value = Math.max(
+                            10,
+                            Math.floor(squareWidth * 0.5),
+                        );
+                    };
+
+                    const handlePointerUp = () => endDrag();
+                    const handleResize = () => updateCellFontSize();
+
+                    watch([cols, rows], () => {
+                        setTimeout(updateCellFontSize, 0);
+                    });
+
+                    onMounted(async () => {
+                        window.addEventListener("pointerup", handlePointerUp);
+                        window.addEventListener("keydown", handleKey);
+                        window.addEventListener("resize", handleResize);
+                        try {
+                            const modelText = await fetch(
+                                "crosswords.mzn",
+                            ).then((res) => {
+                                if (!res.ok)
+                                    throw new Error("Missing crosswords.mzn");
+                                return res.text();
+                            });
+                            await MiniZinc.init({
+                                workerURL:
+                                    "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc-worker.js",
+                                wasmURL:
+                                    "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.wasm",
+                                dataURL:
+                                    "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.data",
+                            });
+                            crosswordsModel.value = modelText;
+                            solveStatus.value = "Runtime ready.";
+                            initWorker();
+                            setTimeout(updateCellFontSize, 0);
+                        } catch (error) {
+                            loadError.value = error.message ?? String(error);
+                        }
+                    });
+
+                    onBeforeUnmount(() => {
+                        window.removeEventListener(
+                            "pointerup",
+                            handlePointerUp,
+                        );
+                        window.removeEventListener("keydown", handleKey);
+                        window.removeEventListener("resize", handleResize);
+                        if (worker.value) {
+                            worker.value.terminate();
+                            worker.value = null;
+                        }
+                    });
+                    return {
+                        rows,
+                        cols,
+                        grid,
+                        flatGrid,
+                        ready,
+                        loadError,
+                        solveStatus,
+                        solving,
+                        startDrag,
+                        dragCell,
+                        endDrag,
+                        cellClass,
+                        cellLabel,
+                        resetGrid,
+                        toggleLength,
+                        lengthOptions,
+                        activeWordCount,
+                        openCellCount,
+                        blockedCellCount,
+                        slotSummary,
+                        solve,
+                        disableSolve,
+                        solutionLetters,
+                        solutionWords,
+                        lastStatus,
+                        fillEntireGrid,
+                        clearSolve,
+                        segmentDetails,
+                        acrossClues,
+                        downClues,
+                        clueHeadline,
+                        minClueCount,
+                        exitGrid,
+                        onCellPointerDown,
+                        onCellPointerEnter,
+                        onCellPointerLeave,
+                        hoveredWordIndex,
+                        hoveredSegmentIndices,
+                        hoveredSegmentCells,
+                        acrossContainer,
+                        downContainer,
+                        onClueHover,
+                        onClueLeave,
+                        gridContainer,
+                        cellFontSize,
+                    };
+                },
             });
-            solvedCells.value = solvedSet;
-            const words = metadata.segments.map((segment) => segment.map((id) => {
-              const index = assignment[id] ?? assignment[id - 1];
-              return typeof index === "number" ? letters[index - 1] ?? "" : "";
-            }).join(""));
-            solutionWords.value = words.filter((word) => word.length > 1);
-          } catch (error) {
-            solveStatus.value = error.message ?? String(error);
-          } finally {
-            solving.value = false;
-          }
-        };
-        const initWorker = () => {
-          const instance = new Worker(new URL("clueWorker.js", import.meta.url), { type: "module" });
-          worker.value = instance;
-          instance.onerror = (error) => {
-            loadError.value = "Worker failed to load: " + (error.message || String(error));
-          };
-          instance.onmessage = (event) => {
-            const { type, payload } = event.data ?? {};
-            if (type === "initialized") {
-              lengthMetadata.value = payload.lengthMetadata ?? [];
-              selectedLengths.value = new Set(lengthMetadata.value.map((meta) => meta.length));
-              ready.value = true;
-            }
-            if (type === "filtered") {
-              if (payload.requestId !== pendingRequest.value) return;
-              lengthMetadata.value = payload.lengthMetadata ?? [];
-            }
-            if (type === "wordsReady") {
-              const request = pendingWordRequests.value.get(payload.requestId);
-              if (request) {
-                if (payload.clueMap) {
-                  wordClueMap.value = new Map(Object.entries(payload.clueMap));
-                }
-                request.resolve(payload.words);
-                pendingWordRequests.value.delete(payload.requestId);
-              }
-            }
-            if (type === "error") {
-              loadError.value = payload.message ?? "Worker error";
-            }
-          };
-          instance.postMessage({ type: "init" });
-        };
-
-        const requestFilter = (minClue) => {
-          if (!worker.value) return;
-          const requestId = Date.now();
-          pendingRequest.value = requestId;
-          worker.value.postMessage({
-            type: "filter",
-            payload: { minClueCount: minClue, requestId },
-          });
-        };
-        
-        const updateCellFontSize = () => {
-          if (!gridContainer.value) return;
-          const containerWidth = gridContainer.value.offsetWidth;
-          const padding = 16;
-          const gap = 1 * (cols.value - 1);
-          const availableWidth = containerWidth - padding - gap;
-          const squareWidth = availableWidth / cols.value;
-          cellFontSize.value = Math.max(10, Math.floor(squareWidth * 0.5));
-        };
-        
-        const handlePointerUp = () => endDrag();
-        const handleResize = () => updateCellFontSize();
-
-        watch([cols, rows], () => {
-          setTimeout(updateCellFontSize, 0);
-        });
-
-        onMounted(async () => {
-          window.addEventListener("pointerup", handlePointerUp);
-          window.addEventListener("keydown", handleKey);
-          window.addEventListener("resize", handleResize);
-          try {
-            const modelText = await fetch("crosswords.mzn").then((res) => {
-              if (!res.ok) throw new Error("Missing crosswords.mzn");
-              return res.text();
-            });
-            await MiniZinc.init({
-              workerURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc-worker.js",
-              wasmURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.wasm",
-              dataURL: "https://cdn.jsdelivr.net/npm/minizinc/dist/minizinc.data",
-            });
-            crosswordsModel.value = modelText;
-            solveStatus.value = "Runtime ready.";
-            initWorker();
-            setTimeout(updateCellFontSize, 0);
-          } catch (error) {
-            loadError.value = error.message ?? String(error);
-          }
-        });
-
-        onBeforeUnmount(() => {
-          window.removeEventListener("pointerup", handlePointerUp);
-          window.removeEventListener("keydown", handleKey);
-          window.removeEventListener("resize", handleResize);
-          if (worker.value) {
-            worker.value.terminate();
-            worker.value = null;
-          }
-        });
-        return {
-          rows,
-          cols,
-          grid,
-          flatGrid,
-          ready,
-          loadError,
-          solveStatus,
-          solving,
-          startDrag,
-          dragCell,
-          endDrag,
-          cellClass,
-          cellLabel,
-          resetGrid,
-          toggleLength,
-          lengthOptions,
-          activeWordCount,
-          openCellCount,
-          blockedCellCount,
-          slotSummary,
-          solve,
-          disableSolve,
-          solutionLetters,
-          solutionWords,
-          lastStatus,
-          fillEntireGrid,
-          clearSolve,
-          segmentDetails,
-          acrossClues,
-          downClues,
-          clueHeadline,
-          minClueCount,
-          exitGrid,
-          onCellPointerDown,
-          onCellPointerEnter,
-          onCellPointerLeave,
-          hoveredWordIndex,
-          hoveredSegmentIndices,
-          hoveredSegmentCells,
-          acrossContainer,
-          downContainer,
-          onClueHover,
-          onClueLeave,
-          gridContainer,
-          cellFontSize,
-        };
-      },
-    });
-    app.mount("#app");
-  </script>
-</body>
+            app.mount("#app");
+        </script>
+    </body>
 </html>
