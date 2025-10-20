@@ -32,6 +32,14 @@ jobs:
       - name: Download valid.csv dataset
         run: node download-dataset.js valid.csv
       
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      
+      - name: Build words.json
+        run: bun run convert_wordlist.js valid.csv
+      
       - name: Setup Pages
         uses: actions/configure-pages@v4
         with:
